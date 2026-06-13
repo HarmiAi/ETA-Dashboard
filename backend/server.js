@@ -32,6 +32,16 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
+
+// Root route for Render health check
+app.get('/', (req, res) => {
+  res.json({
+    message: 'ETA Dashboard Backend is running 🚀',
+    status: 'success'
+  });
+});
+
+
 // Socket.io integration
 const io = socketIo(server, {
   cors: {
