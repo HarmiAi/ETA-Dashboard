@@ -144,7 +144,7 @@ export default function NotificationManager() {
   useEffect(() => {
     if (!token) return;
 
-    socketRef.current = io('http://localhost:5000');
+    socketRef.current = io('https://eta-dashboard-backend.onrender.com/');
 
     socketRef.current.on('taskCreated', (task) => {
       dispatch(socketTaskCreated(task));

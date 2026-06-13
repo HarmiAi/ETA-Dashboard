@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://eta-dashboard-backend.onrender.com/api';
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { getHeaders } from './authSlice';
 

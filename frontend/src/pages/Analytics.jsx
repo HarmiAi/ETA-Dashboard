@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://eta-dashboard-backend.onrender.com/api';
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { getHeaders } from '../store/authSlice';
