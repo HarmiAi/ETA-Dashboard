@@ -23,7 +23,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Set up API Routes
 app.use('/api/auth', authRoutes);
@@ -44,7 +45,7 @@ app.set('io', io);
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
-  
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
@@ -65,7 +66,7 @@ cron.schedule('* * * * *', async () => {
   console.log('Running background task checker...');
   try {
     const now = new Date();
-    
+
     // Find tasks that are not Completed, not yet marked Overdue, and their ETA has passed
     const tasksToNotify = await Task.find({
       status: { $in: ['Not Started', 'In Progress'] },

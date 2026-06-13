@@ -21,6 +21,10 @@ const EmployeeSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  avatar: {
+    type: String, // Base64 or image URL
+    default: '',
+  },
   active: {
     type: Boolean,
     default: true,

@@ -136,10 +136,21 @@ const taskSlice = createSlice({
     list: [],
     loading: false,
     error: null,
+    isAssignModalOpen: false,
+    searchQuery: '',
   },
   reducers: {
     clearTaskError: (state) => {
       state.error = null;
+    },
+    openAssignModal: (state) => {
+      state.isAssignModalOpen = true;
+    },
+    closeAssignModal: (state) => {
+      state.isAssignModalOpen = false;
+    },
+    setSearchQuery: (state, action) => {
+      state.searchQuery = action.payload;
     },
     // Realtime update hook (via Socket.io)
     socketTaskUpdated: (state, action) => {
@@ -251,5 +262,13 @@ const taskSlice = createSlice({
   },
 });
 
-export const { clearTaskError, socketTaskUpdated, socketTaskCreated, socketTaskDeleted } = taskSlice.actions;
+export const { 
+  clearTaskError, 
+  socketTaskUpdated, 
+  socketTaskCreated, 
+  socketTaskDeleted,
+  openAssignModal,
+  closeAssignModal,
+  setSearchQuery
+} = taskSlice.actions;
 export default taskSlice.reducer;

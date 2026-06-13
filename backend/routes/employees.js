@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
 // @desc    Add a new employee
 // @access  Private
 router.post('/', async (req, res) => {
-  const { name, email, department, designation } = req.body;
+  const { name, email, department, designation, avatar } = req.body;
 
   if (!name || !email) {
     return res.status(400).json({ message: 'Name and email are required' });
@@ -41,6 +41,7 @@ router.post('/', async (req, res) => {
       email,
       department,
       designation,
+      avatar: avatar || '',
     });
 
     await employee.save();
@@ -55,7 +56,7 @@ router.post('/', async (req, res) => {
 // @desc    Update an employee
 // @access  Private
 router.put('/:id', async (req, res) => {
-  const { name, email, department, designation, active } = req.body;
+  const { name, email, department, designation, active, avatar } = req.body;
 
   try {
     let employee = await Employee.findById(req.params.id);
@@ -76,6 +77,7 @@ router.put('/:id', async (req, res) => {
     employee.department = department !== undefined ? department : employee.department;
     employee.designation = designation !== undefined ? designation : employee.designation;
     employee.active = active !== undefined ? active : employee.active;
+    employee.avatar = avatar !== undefined ? avatar : employee.avatar;
 
     await employee.save();
     res.json(employee);

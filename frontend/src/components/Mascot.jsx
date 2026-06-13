@@ -71,12 +71,12 @@ export default function Mascot({ tasks = [] }) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl h-full relative overflow-hidden glass-card">
+    <div className="flex flex-col items-center justify-center p-6 rounded-[28px] h-full relative overflow-hidden clay-card bg-white">
       {/* Decorative subtle pulse glow in background */}
-      <div className={`absolute inset-0 w-full h-full -z-10 opacity-10 transition-colors duration-500 ${
+      <div className={`absolute inset-0 w-full h-full -z-10 opacity-5 transition-colors duration-500 ${
         state === 'concerned' ? 'bg-red-500' :
         state === 'celebrating' ? 'bg-emerald-500' :
-        'bg-blue-500'
+        'bg-[#5EAD93]'
       }`} />
 
       {/* SVG Canvas for High-Fidelity Vector Puppy Mascot */}
@@ -89,7 +89,7 @@ export default function Mascot({ tasks = [] }) {
         {/* Tail (Backside layer) */}
         <motion.path
           d="M 50,140 C 35,130 20,110 15,90 C 20,85 25,90 35,105 C 45,120 50,130 50,140 Z"
-          fill="#c084fc" // Purple tail matching custom brand palette
+          fill="#6CD3B4" // Sage tail matching custom brand palette
           stroke="#4b5563"
           strokeWidth="1.5"
           originX="50px"
@@ -222,7 +222,7 @@ export default function Mascot({ tasks = [] }) {
             <>
               <line x1="82" y1="132" x2="105" y2="132" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" />
               <line x1="82" y1="138" x2="115" y2="138" stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
-              <line x1="82" y1="144" x2="95" y2="144" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" />
+              <line x1="82" y1="144" x2="95" y2="144" stroke="#6CD3B4" strokeWidth="2" strokeLinecap="round" />
               <line x1="82" y1="150" x2="100" y2="150" stroke="#F472B6" strokeWidth="2" strokeLinecap="round" />
             </>
           )}
@@ -236,12 +236,12 @@ export default function Mascot({ tasks = [] }) {
 
       {/* Dynamic speech bubble containing productivity statuses */}
       <div className="mt-4 text-center z-10">
-        <h4 className="text-sm font-bold text-white">
+        <h4 className="text-sm font-bold text-slate-800">
           {state === 'concerned' ? 'Alarms Triggered!' :
            state === 'celebrating' ? 'Day Cleared! 🎉' :
            'Monitoring Milestones'}
         </h4>
-        <p className="text-xs text-slate-400 mt-1 max-w-[200px] leading-relaxed">
+        <p className="text-xs text-slate-500 mt-1 max-w-[200px] leading-relaxed">
           {state === 'concerned' ? 'We have overdue tasks! Let\'s follow up with the team.' :
            state === 'celebrating' ? 'Awesome job! All daily ETAs have been completed on time.' :
            'I am tracking team milestones live. Everything is running smoothly!'}
@@ -252,7 +252,7 @@ export default function Mascot({ tasks = [] }) {
       {state === 'celebrating' && (
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-8 left-10 w-2.5 h-2.5 bg-yellow-400 rounded-full animate-ping" />
-          <div className="absolute top-12 right-12 w-2 h-2 bg-purple-400 rounded-full animate-bounce" />
+          <div className="absolute top-12 right-12 w-2 h-2 bg-[#5EAD93] rounded-full animate-bounce" />
           <div className="absolute bottom-16 left-12 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
         </div>
       )}
