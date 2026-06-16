@@ -178,6 +178,14 @@ export default function NotificationManager() {
 
     socketRef.current.on('connect', () => {
       console.log(`[Socket] Connected successfully! Socket ID: ${socketRef.current.id}`);
+      if (socketRef.current.io && socketRef.current.io.engine && socketRef.current.io.engine.transport) {
+        console.log(`[Socket] Active transport protocol: ${socketRef.current.io.engine.transport.name}`);
+        
+        // Listen for transport upgrade (e.g. polling -> websocket)
+        socketRef.current.io.engine.on('upgrade', (transport) => {
+          console.log(`[Socket] Transport upgraded to: ${transport.name}`);
+        });
+      }
     });
 
     socketRef.current.on('connect_error', (error) => {
@@ -237,6 +245,7 @@ export default function NotificationManager() {
     }
     console.log('[Notifications] Permission status:', Notification.permission);
     console.log('[Notifications] App-level toggle status:', notificationService.isEnabled());
+    console.log('[Push Notification] Firebase/VAPID Push subscriptions are not used in this app. Notifications rely on live socket.io triggers.');
 
     return () => {
       if (socketRef.current) {

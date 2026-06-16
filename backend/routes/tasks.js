@@ -96,7 +96,12 @@ router.post('/', async (req, res) => {
     // Emit live task creation event if socket is available
     if (req.app.get('io')) {
       const io = req.app.get('io');
-      console.log(`[API Task Create] Emitting [taskCreated] socket alert for task [ID: ${task._id}] to ${io.sockets.sockets.size} active clients.`);
+      console.log("[Socket Emit Trace]", {
+        event: 'taskCreated',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: task._id, title: task.title }
+      });
       io.emit('taskCreated', task);
     } else {
       console.warn('[API Task Create] WARNING: io object not found on app, cannot emit taskCreated event.');
@@ -164,7 +169,12 @@ router.post('/:id/complete', async (req, res) => {
 
     if (req.app.get('io')) {
       const io = req.app.get('io');
-      console.log(`[API Task Complete] Emitting [taskUpdated] socket alert for completed task [ID: ${task._id}] to ${io.sockets.sockets.size} active clients.`);
+      console.log("[Socket Emit Trace]", {
+        event: 'taskUpdated',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: task._id, status: 'Completed' }
+      });
       io.emit('taskUpdated', task);
     } else {
       console.warn('[API Task Complete] WARNING: io object not found on app, cannot emit taskUpdated event.');
@@ -210,7 +220,12 @@ router.post('/:id/extend', async (req, res) => {
 
     if (req.app.get('io')) {
       const io = req.app.get('io');
-      console.log(`[API Task Extend] Emitting [taskUpdated] socket alert for extended task [ID: ${task._id}] to ${io.sockets.sockets.size} active clients.`);
+      console.log("[Socket Emit Trace]", {
+        event: 'taskUpdated',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: task._id, status: 'In Progress', newEta: task.eta }
+      });
       io.emit('taskUpdated', task);
     } else {
       console.warn('[API Task Extend] WARNING: io object not found on app, cannot emit taskUpdated event.');
@@ -245,7 +260,12 @@ router.post('/:id/not-started', async (req, res) => {
 
     if (req.app.get('io')) {
       const io = req.app.get('io');
-      console.log(`[API Task Reset] Emitting [taskUpdated] socket alert for reset task [ID: ${task._id}] to ${io.sockets.sockets.size} active clients.`);
+      console.log("[Socket Emit Trace]", {
+        event: 'taskUpdated',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: task._id, status: 'Not Started' }
+      });
       io.emit('taskUpdated', task);
     } else {
       console.warn('[API Task Reset] WARNING: io object not found on app, cannot emit taskUpdated event.');
@@ -272,7 +292,12 @@ router.delete('/:id', async (req, res) => {
 
     if (req.app.get('io')) {
       const io = req.app.get('io');
-      console.log(`[API Task Delete] Emitting [taskDeleted] socket event for task [ID: ${req.params.id}] to ${io.sockets.sockets.size} active clients.`);
+      console.log("[Socket Emit Trace]", {
+        event: 'taskDeleted',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: req.params.id }
+      });
       io.emit('taskDeleted', req.params.id);
     } else {
       console.warn('[API Task Delete] WARNING: io object not found on app, cannot emit taskDeleted event.');

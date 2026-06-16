@@ -45,7 +45,10 @@ app.get('/', (req, res) => {
 // Socket.io integration
 const io = socketIo(server, {
   cors: {
-    origin: '*',
+    origin: function (origin, callback) {
+      // Mirror the requester's origin to allow credentials mode
+      callback(null, origin || '*');
+    },
     methods: ['GET', 'POST'],
     credentials: true
   },
@@ -56,19 +59,33 @@ const io = socketIo(server, {
 app.set('io', io);
 
 io.on('connection', (socket) => {
-  console.log(`[Socket] Client connected: ID=${socket.id}, Origin=${socket.handshake.headers.origin || 'N/A'}, Address=${socket.handshake.address}`);
-  console.log(`[Socket] Total active connected clients: ${io.sockets.sockets.size}`);
+  console.log('---------------- SOCKET CONNECTION ----------------');
+  console.log(`[Socket] Client connected! Socket ID: ${socket.id}`);
+  console.log(`[Socket] Origin: ${socket.handshake.headers.origin || 'N/A'}`);
+  console.log(`[Socket] IP Address: ${socket.handshake.address}`);
+  console.log(`[Socket] Handshake Headers:`, JSON.stringify(socket.handshake.headers));
+  console.log(`[Socket] Handshake Auth:`, JSON.stringify(socket.handshake.auth));
+  console.log(`[Socket] Connected users:`, io.engine.clientsCount);
+  console.log(`[Socket] Active Rooms:`, Array.from(io.sockets.adapter.rooms.keys()));
+  console.log('----------------------------------------------------');
 
   socket.on('disconnect', (reason) => {
-    console.log(`[Socket] Client disconnected: ID=${socket.id}, Reason=${reason}`);
-    console.log(`[Socket] Total active connected clients: ${io.sockets.sockets.size}`);
+    console.log('---------------- SOCKET DISCONNECTION ----------------');
+    console.log(`[Socket] Client disconnected! Socket ID: ${socket.id}`);
+    console.log(`[Socket] Reason: ${reason}`);
+    console.log(`[Socket] Connected users:`, io.engine.clientsCount);
+    console.log('-------------------------------------------------------');
   });
 });
 
 // Database Connection
 const mongoURI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/eta-dashboard';
 mongoose.connect(mongoURI)
-  .then(() => console.log('MongoDB database connected successfully to:', mongoURI))
+  .then(() => {
+    console.log('MongoDB database connected successfully to:', mongoURI);
+    console.log('[System Diagnostics] NODE_ENV:', process.env.NODE_ENV || 'development');
+    console.log('[System Diagnostics] Server Port:', process.env.PORT || 5000);
+  })
   .catch(err => {
     console.error('MongoDB database connection error:', err);
     process.exit(1);
@@ -106,8 +123,12 @@ cron.schedule('* * * * *', async () => {
       console.log(`[Cron Scheduler] Task Alert: "${task.title}" for employee "${task.employeeId?.name || 'N/A'}" marked Overdue.`);
 
       // Emit ETA reached event to all connected socket clients
-      const activeClients = io.sockets.sockets.size;
-      console.log(`[Cron Scheduler] Emitting [etaReached] socket alert for task [ID: ${task._id}] to ${activeClients} active connections.`);
+      console.log("[Socket Emit Trace]", {
+        event: 'etaReached',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: task._id, title: task.title, eta: task.eta }
+      });
       io.emit('etaReached', task);
     }
   } catch (err) {
