@@ -45,6 +45,13 @@ export default function NotificationManager() {
   const timersRef = useRef({});
   const lastAlertTimesRef = useRef({});
 
+  // Request notification permission automatically on login/mount
+  useEffect(() => {
+    if (token) {
+      notificationService.requestPermission();
+    }
+  }, [token]);
+
   // 1. Listen for background actions posted by the Service Worker
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
