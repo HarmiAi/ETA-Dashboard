@@ -45,10 +45,10 @@ app.get('/', (req, res) => {
 // Socket.io integration
 const io = socketIo(server, {
   cors: {
-    origin: function (origin, callback) {
-      // Mirror the requester's origin to allow credentials mode
-      callback(null, origin || '*');
-    },
+    origin: [
+      'http://localhost:5173',
+      'https://eta-dashboard-three.vercel.app/'
+    ],
     methods: ['GET', 'POST'],
     credentials: true
   },
