@@ -44,10 +44,16 @@ export default function NotificationManager() {
   const socketRef = useRef(null);
   const timersRef = useRef({});
   const lastAlertTimesRef = useRef({});
+  const tasksRef = useRef([]);
 
-  // Request notification permission automatically on login/mount
+  // Keep tasksRef up to date with latest tasks list
   useEffect(() => {
-    if (token) {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  // Request notification permission automatically on login/mount if enabled at app level
+  useEffect(() => {
+    if (token && notificationService.isEnabled()) {
       notificationService.requestPermission();
     }
   }, [token]);
@@ -86,7 +92,7 @@ export default function NotificationManager() {
     };
   }, [dispatch, navigate]);
 
-  // 2. Schedule alerts at the EXACT ETA and handle 15-minute overdue repetitions
+  // 2A. Schedule high-precision timeouts for future ETAs (rescheduled/created in the future)
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
 
@@ -114,11 +120,19 @@ export default function NotificationManager() {
       }
     });
 
-    // Case B: Background monitoring loop to handle overdue tasks & 15-minute repetitions
+    return () => {
+      Object.keys(timersRef.current).forEach((id) => clearTimeout(timersRef.current[id]));
+    };
+  }, [tasks, dispatch]);
+
+  // 2B. Persistent background monitoring loop for overdue tasks & 15-minute repetitions
+  // Runs continuously every 5 seconds (not affected by state updates)
+  useEffect(() => {
     const monitoringInterval = setInterval(() => {
       const currentTime = Date.now();
-      
-      tasks.forEach((task) => {
+      const currentTasks = tasksRef.current || [];
+
+      currentTasks.forEach((task) => {
         if (task.status === 'Completed') return;
 
         const etaTime = new Date(task.eta).getTime();
@@ -134,13 +148,12 @@ export default function NotificationManager() {
           }
         }
       });
-    }, 30000); // Check every 30 seconds
+    }, 5000); // Check every 5 seconds for high responsiveness
 
     return () => {
-      Object.keys(timersRef.current).forEach((id) => clearTimeout(timersRef.current[id]));
       clearInterval(monitoringInterval);
     };
-  }, [tasks, dispatch]);
+  }, []);
 
   const triggerTaskNotification = (task) => {
     playBeep();

@@ -20,6 +20,17 @@ const saveNotifiedTasks = (notifiedMap) => {
 };
 
 export const notificationService = {
+  // Check if notifications are enabled at the app level
+  isEnabled: () => {
+    const val = localStorage.getItem('app_notifications_enabled');
+    return val === null ? true : val === 'true';
+  },
+
+  // Set notifications enabled state at the app level
+  setEnabled: (enabled) => {
+    localStorage.setItem('app_notifications_enabled', enabled ? 'true' : 'false');
+  },
+
   // Request notification permission
   requestPermission: async () => {
     if (!('Notification' in window)) {
@@ -39,11 +50,14 @@ export const notificationService = {
 
   // Trigger a native OS notification backed by the Service Worker
   showNotification: async (task) => {
-    if (!notificationService.isGranted()) return;
+    // Check app-level toggle first
+    if (!notificationService.isEnabled()) {
+      console.log('Notifications are disabled at the app level.');
+      return;
+    }
 
-    const registration = await navigator.serviceWorker.ready;
-    if (!registration) {
-      console.warn('Service Worker is not ready to trigger notification');
+    if (!notificationService.isGranted()) {
+      console.log('Browser notification permission is not granted.');
       return;
     }
 
@@ -74,7 +88,35 @@ export const notificationService = {
     };
 
     // Show native desktop notification
-    await registration.showNotification(title, options);
+    try {
+      if ('serviceWorker' in navigator) {
+        // Race Service Worker ready with a 1-second timeout
+        const registration = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SW timeout')), 1000))
+        ]);
+        await registration.showNotification(title, options);
+      } else {
+        new Notification(title, {
+          body: options.body,
+          icon: options.icon,
+          tag: options.tag,
+          requireInteraction: options.requireInteraction
+        });
+      }
+    } catch (e) {
+      console.warn('Service Worker alert failed or timed out, falling back to standard Notification:', e);
+      try {
+        new Notification(title, {
+          body: options.body,
+          icon: options.icon,
+          tag: options.tag,
+          requireInteraction: options.requireInteraction
+        });
+      } catch (err) {
+        console.error('All notification methods failed:', err);
+      }
+    }
 
     // Save status to avoid repeated alerts for this specific ETA
     notifiedMap[taskId] = taskEtaTime;
