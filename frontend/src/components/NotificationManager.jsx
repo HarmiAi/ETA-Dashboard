@@ -163,38 +163,84 @@ export default function NotificationManager() {
 
   // 3. Socket.io Event Handling
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      console.log('[Socket] No auth token found, skipping socket setup.');
+      return;
+    }
 
-    socketRef.current = io(getBackendUrl());
+    const backendUrl = getBackendUrl();
+    console.log(`[Socket] Initializing connection to: ${backendUrl}`);
+
+    socketRef.current = io(backendUrl, {
+      transports: ['websocket', 'polling'],
+      withCredentials: true
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log(`[Socket] Connected successfully! Socket ID: ${socketRef.current.id}`);
+    });
+
+    socketRef.current.on('connect_error', (error) => {
+      console.error('[Socket] Connection error observed:', error.message, error);
+    });
+
+    socketRef.current.on('disconnect', (reason) => {
+      console.warn(`[Socket] Disconnected from server. Reason: ${reason}`);
+    });
+
+    socketRef.current.on('reconnect_attempt', (attempt) => {
+      console.log(`[Socket] Attempting reconnection #${attempt}...`);
+    });
 
     socketRef.current.on('taskCreated', (task) => {
+      console.log('[Socket] Event [taskCreated] received:', task);
       dispatch(socketTaskCreated(task));
     });
 
     socketRef.current.on('taskUpdated', (task) => {
+      console.log('[Socket] Event [taskUpdated] received:', task);
       dispatch(socketTaskUpdated(task));
       if (task.status === 'Completed') {
         if ('serviceWorker' in navigator && Notification.permission === 'granted') {
           navigator.serviceWorker.ready.then((registration) => {
+            console.log('[Service Worker] Closing active notification for completed task:', task._id);
             registration.getNotifications({ tag: task._id }).then((notifications) => {
               notifications.forEach((notification) => notification.close());
             });
+          }).catch(err => {
+            console.error('[Service Worker] Ready check failed during dismiss:', err);
           });
         }
       }
     });
 
     socketRef.current.on('taskDeleted', (taskId) => {
+      console.log('[Socket] Event [taskDeleted] received for ID:', taskId);
       dispatch(socketTaskDeleted(taskId));
     });
 
     socketRef.current.on('etaReached', (task) => {
+      console.log('[Socket] Event [etaReached] received:', task);
       dispatch(socketTaskUpdated(task));
       triggerTaskNotification(task);
     });
 
+    // Diagnose Service Worker & permissions status upon socket initialization
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(reg => {
+        console.log('[Service Worker] Ready. Active Scope:', reg.scope);
+      }).catch(err => {
+        console.error('[Service Worker] Failed to resolve ready state:', err);
+      });
+    } else {
+      console.warn('[Service Worker] serviceWorker object is missing from navigator.');
+    }
+    console.log('[Notifications] Permission status:', Notification.permission);
+    console.log('[Notifications] App-level toggle status:', notificationService.isEnabled());
+
     return () => {
       if (socketRef.current) {
+        console.log('[Socket] Cleaning up socket connection...');
         socketRef.current.disconnect();
       }
     };

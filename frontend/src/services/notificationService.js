@@ -50,24 +50,28 @@ export const notificationService = {
 
   // Trigger a native OS notification backed by the Service Worker
   showNotification: async (task) => {
+    const taskId = task._id;
+    const taskTitle = task.title;
+    console.log(`[NotificationService] Attempting to trigger notification popup for task [ID: ${taskId}, Title: "${taskTitle}"]`);
+
     // Check app-level toggle first
     if (!notificationService.isEnabled()) {
-      console.log('Notifications are disabled at the app level.');
+      console.log('[NotificationService] Skipped: Notifications are disabled in the app settings (app_notifications_enabled is false).');
       return;
     }
 
+    // Check browser-level permission
     if (!notificationService.isGranted()) {
-      console.log('Browser notification permission is not granted.');
+      console.warn(`[NotificationService] Skipped: Browser notification permission is NOT granted. Current permission: ${Notification.permission}`);
       return;
     }
 
     const notifiedMap = getNotifiedTasks();
-    const taskId = task._id;
     const taskEtaTime = new Date(task.eta).getTime();
 
     // Prevent duplicate alerts for the exact same task ETA unless the ETA changes (rescheduled/snoozed)
     if (notifiedMap[taskId] === taskEtaTime) {
-      console.log(`Notification for task ${taskId} at ${task.eta} was already triggered.`);
+      console.log(`[NotificationService] Skipped: A notification for task ${taskId} at ETA ${task.eta} was already shown to the user.`);
       return;
     }
 
@@ -87,25 +91,32 @@ export const notificationService = {
       ]
     };
 
+    console.log('[NotificationService] Dispatching notification parameters:', { title, options });
+
     // Show native desktop notification
     try {
       if ('serviceWorker' in navigator) {
+        console.log('[NotificationService] Checking Service Worker registration...');
         // Race Service Worker ready with a 1-second timeout
         const registration = await Promise.race([
           navigator.serviceWorker.ready,
           new Promise((_, reject) => setTimeout(() => reject(new Error('SW timeout')), 1000))
         ]);
+        console.log('[NotificationService] Service Worker is active. Triggering showNotification...');
         await registration.showNotification(title, options);
+        console.log(`[NotificationService] Notification displayed successfully via Service Worker for task: ${taskId}`);
       } else {
+        console.log('[NotificationService] Service worker not present in navigator. Falling back to standard Notification API...');
         new Notification(title, {
           body: options.body,
           icon: options.icon,
           tag: options.tag,
           requireInteraction: options.requireInteraction
         });
+        console.log(`[NotificationService] Notification displayed successfully via standard API for task: ${taskId}`);
       }
     } catch (e) {
-      console.warn('Service Worker alert failed or timed out, falling back to standard Notification:', e);
+      console.warn('[NotificationService] SW registration check timed out or failed. Attempting standard Notification fallback...', e);
       try {
         new Notification(title, {
           body: options.body,
@@ -113,8 +124,9 @@ export const notificationService = {
           tag: options.tag,
           requireInteraction: options.requireInteraction
         });
+        console.log(`[NotificationService] Fallback notification triggered successfully for task: ${taskId}`);
       } catch (err) {
-        console.error('All notification methods failed:', err);
+        console.error('[NotificationService] Critical: All notification rendering strategies failed!', err);
       }
     }
 

@@ -47,17 +47,21 @@ const io = socketIo(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST'],
-  }
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
 });
 
 // Store socket io instance on the app to access in routes
 app.set('io', io);
 
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
+  console.log(`[Socket] Client connected: ID=${socket.id}, Origin=${socket.handshake.headers.origin || 'N/A'}, Address=${socket.handshake.address}`);
+  console.log(`[Socket] Total active connected clients: ${io.sockets.sockets.size}`);
 
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
+  socket.on('disconnect', (reason) => {
+    console.log(`[Socket] Client disconnected: ID=${socket.id}, Reason=${reason}`);
+    console.log(`[Socket] Total active connected clients: ${io.sockets.sockets.size}`);
   });
 });
 
@@ -73,7 +77,8 @@ mongoose.connect(mongoURI)
 // Server-Side Scheduling Logic: Overdue & Alarm cron job
 // Runs every minute to find tasks whose ETA has passed and trigger alarms
 cron.schedule('* * * * *', async () => {
-  console.log('Running background task checker...');
+  const timestamp = new Date().toISOString();
+  console.log(`[Cron Scheduler] Run trigger at: ${timestamp}`);
   try {
     const now = new Date();
 
@@ -83,6 +88,10 @@ cron.schedule('* * * * *', async () => {
       eta: { $lte: now },
       notified: false
     }).populate('employeeId', 'name email department designation');
+
+    if (tasksToNotify.length > 0) {
+      console.log(`[Cron Scheduler] Detected ${tasksToNotify.length} newly overdue tasks.`);
+    }
 
     for (const task of tasksToNotify) {
       task.status = 'Overdue';
@@ -94,13 +103,15 @@ cron.schedule('* * * * *', async () => {
       });
       await task.save();
 
-      console.log(`Alert: Task "${task.title}" for employee "${task.employeeId.name}" is overdue!`);
+      console.log(`[Cron Scheduler] Task Alert: "${task.title}" for employee "${task.employeeId?.name || 'N/A'}" marked Overdue.`);
 
       // Emit ETA reached event to all connected socket clients
+      const activeClients = io.sockets.sockets.size;
+      console.log(`[Cron Scheduler] Emitting [etaReached] socket alert for task [ID: ${task._id}] to ${activeClients} active connections.`);
       io.emit('etaReached', task);
     }
   } catch (err) {
-    console.error('Error in background cron scheduler:', err);
+    console.error('[Cron Scheduler] Error encountered:', err);
   }
 });
 

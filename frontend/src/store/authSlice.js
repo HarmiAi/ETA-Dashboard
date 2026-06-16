@@ -1,8 +1,21 @@
 export const getBackendUrl = () => {
+  // 1. Build-time environment variable overrides
+  if (import.meta.env && import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // 2. Localhost development environments
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     return 'http://localhost:5000';
   }
-  return 'https://eta-dashboard-backend.onrender.com';
+  
+  // 3. Render/Vercel standard staging/prod environments
+  if (window.location.hostname.includes('render.com') || window.location.hostname.includes('vercel.app')) {
+    return 'https://eta-dashboard-backend.onrender.com';
+  }
+  
+  // 4. Default VPS fallback (API served or reverse proxied on the same domain/IP origin)
+  return window.location.origin;
 };
 
 const API_URL = `${getBackendUrl()}/api`;
