@@ -14,7 +14,7 @@ import {
 import { fetchEmployees } from '../store/employeeSlice';
 import Mascot from '../components/Mascot';
 import EmployeeJourneyBar from '../components/EmployeeJourneyBar';
-import { getAvatarColor } from '../components/NotificationManager';
+import { getAvatarColor, getInitials } from '../components/NotificationManager';
 import { 
   Plus, 
   CheckCircle, 
@@ -387,7 +387,7 @@ export default function Dashboard() {
         >
           {filteredTasks.map((task) => {
             const employeeName = task.employeeId?.name || 'N/A';
-            const initials = employeeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+            const initials = getInitials(employeeName);
             
             return (
               <motion.div
@@ -696,7 +696,7 @@ export default function Dashboard() {
 // Sub-Timeline Card helper
 function TimelineCard({ task }) {
   const name = task.employeeId?.name || 'N/A';
-  const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  const initials = getInitials(name);
 
   return (
     <div className="p-3 bg-slate-50/50 rounded-xl border border-[#D1DFDA] flex items-center justify-between hover:border-[#5EAD93] transition">

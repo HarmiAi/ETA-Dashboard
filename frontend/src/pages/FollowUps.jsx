@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { fetchTasks, completeTask, extendTask } from '../store/taskSlice';
 import { AlertTriangle, Clock, Check, Calendar, ArrowRight, CornerDownRight, X } from 'lucide-react';
-import { getAvatarColor } from '../components/NotificationManager';
+import { getAvatarColor, getInitials } from '../components/NotificationManager';
 
 export default function FollowUps() {
   const dispatch = useDispatch();
@@ -54,7 +54,7 @@ export default function FollowUps() {
         ) : (
           overdueTasks.map((task) => {
             const name = task.employeeId?.name || 'N/A';
-            const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+            const initials = getInitials(name);
 
             return (
               <div 

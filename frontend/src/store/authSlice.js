@@ -1,4 +1,11 @@
-const API_URL = 'https://eta-dashboard-backend.onrender.com/api';
+export const getBackendUrl = () => {
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:5000';
+  }
+  return 'https://eta-dashboard-backend.onrender.com';
+};
+
+const API_URL = `${getBackendUrl()}/api`;
 
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 

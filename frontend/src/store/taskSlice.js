@@ -1,6 +1,7 @@
-const API_URL = 'https://eta-dashboard-backend.onrender.com/api';
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { getHeaders } from './authSlice';
+import { getHeaders, getBackendUrl } from './authSlice';
+
+const API_URL = `${getBackendUrl()}/api`;
 
 export const fetchTasks = createAsyncThunk(
   'tasks/fetchAll',
@@ -29,10 +30,14 @@ export const createTask = createAsyncThunk(
   'tasks/create',
   async (taskData, { rejectWithValue }) => {
     try {
+      const formattedData = {
+        ...taskData,
+        eta: taskData.eta ? new Date(taskData.eta).toISOString() : taskData.eta
+      };
       const response = await fetch(`${API_URL}/tasks`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify(taskData),
+        body: JSON.stringify(formattedData),
       });
       const data = await response.json();
       if (!response.ok) return rejectWithValue(data.message || 'Failed to assign task');
@@ -82,10 +87,11 @@ export const extendTask = createAsyncThunk(
   'tasks/extend',
   async ({ id, newEta, reason }, { rejectWithValue }) => {
     try {
+      const formattedNewEta = newEta ? new Date(newEta).toISOString() : newEta;
       const response = await fetch(`${API_URL}/tasks/${id}/extend`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ newEta, reason }),
+        body: JSON.stringify({ newEta: formattedNewEta, reason }),
       });
       const data = await response.json();
       if (!response.ok) return rejectWithValue(data.message || 'Failed to extend task ETA');

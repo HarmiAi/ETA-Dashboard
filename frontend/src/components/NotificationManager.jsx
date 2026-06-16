@@ -10,6 +10,7 @@ import {
 } from '../store/taskSlice';
 import { notificationService } from '../services/notificationService';
 import { io } from 'socket.io-client';
+import { getBackendUrl } from '../store/authSlice';
 
 // Simple beep utility for in-app alert feedback
 const playBeep = () => {
@@ -144,7 +145,7 @@ export default function NotificationManager() {
   useEffect(() => {
     if (!token) return;
 
-    socketRef.current = io('https://eta-dashboard-backend.onrender.com/');
+    socketRef.current = io(getBackendUrl());
 
     socketRef.current.on('taskCreated', (task) => {
       dispatch(socketTaskCreated(task));
@@ -152,6 +153,15 @@ export default function NotificationManager() {
 
     socketRef.current.on('taskUpdated', (task) => {
       dispatch(socketTaskUpdated(task));
+      if (task.status === 'Completed') {
+        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+          navigator.serviceWorker.ready.then((registration) => {
+            registration.getNotifications({ tag: task._id }).then((notifications) => {
+              notifications.forEach((notification) => notification.close());
+            });
+          });
+        }
+      }
     });
 
     socketRef.current.on('taskDeleted', (taskId) => {
@@ -185,6 +195,14 @@ export const getAvatarColor = (name = 'E') => {
   let sum = 0;
   for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
   return colors[sum % colors.length];
+};
+
+export const getInitials = (name = '') => {
+  if (!name) return 'E';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 0) return 'E';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
 export { playBeep };

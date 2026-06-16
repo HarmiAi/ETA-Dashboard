@@ -1,7 +1,8 @@
-const API_URL = 'https://eta-dashboard-backend.onrender.com/api';
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { getHeaders } from '../store/authSlice';
+import { getHeaders, getBackendUrl } from '../store/authSlice';
+
+const API_URL = `${getBackendUrl()}/api`;
 import { motion } from 'framer-motion';
 import { 
   BarChart, 

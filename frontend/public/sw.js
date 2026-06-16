@@ -34,7 +34,7 @@ self.addEventListener('notificationclick', (event) => {
         openClient.postMessage(messagePayload);
       } else {
         // If browser is open but the dashboard tab was closed, launch a new client window
-        return self.clients.openWindow('http://localhost:5173/').then((newClient) => {
+        return self.clients.openWindow(self.location.origin + '/').then((newClient) => {
           if (newClient) {
             // Wait briefly for React app to boot and register the message listener
             setTimeout(() => {

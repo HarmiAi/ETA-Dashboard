@@ -1,6 +1,8 @@
-const API_URL = 'https://eta-dashboard-backend.onrender.com/api';
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { getBackendUrl } from '../store/authSlice';
+
+const API_URL = `${getBackendUrl()}/api`;
 import { 
   fetchEmployees, 
   addEmployee, 
@@ -21,6 +23,8 @@ import {
   ShieldAlert,
   Loader2 
 } from 'lucide-react';
+
+import { getInitials } from '../components/NotificationManager';
 
 export default function Employees() {
   const dispatch = useDispatch();
@@ -172,7 +176,7 @@ export default function Employees() {
                           <img src={employee.avatar} alt={employee.name} className="h-full w-full object-cover" />
                         ) : (
                           <div className="h-full w-full bg-[#5EAD93]/10 text-[#5EAD93] flex items-center justify-center font-bold text-[10px]">
-                            {employee.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            {getInitials(employee.name)}
                           </div>
                         )}
                       </div>

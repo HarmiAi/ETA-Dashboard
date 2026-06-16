@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { fetchTasks, completeTask } from '../store/taskSlice';
 import { Clock, CheckCircle, AlertCircle, User, ArrowRight } from 'lucide-react';
-import { getAvatarColor } from '../components/NotificationManager';
+import { getAvatarColor, getInitials } from '../components/NotificationManager';
 
 export default function TodayTasks() {
   const dispatch = useDispatch();
@@ -49,7 +49,7 @@ export default function TodayTasks() {
           <div className="divide-y divide-[#D1DFDA]">
             {todayTasks.map((task) => {
               const name = task.employeeId?.name || 'N/A';
-              const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+              const initials = getInitials(name);
 
               return (
                 <div key={task._id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 transition">

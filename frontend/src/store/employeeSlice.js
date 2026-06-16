@@ -1,6 +1,7 @@
-const API_URL = 'https://eta-dashboard-backend.onrender.com/api';
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { getHeaders } from './authSlice';
+import { getHeaders, getBackendUrl } from './authSlice';
+
+const API_URL = `${getBackendUrl()}/api`;
 
 export const fetchEmployees = createAsyncThunk(
   'employees/fetchAll',

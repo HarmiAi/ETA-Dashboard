@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTasks, completeTask, extendTask } from '../store/taskSlice';
-import { getAvatarColor } from '../components/NotificationManager';
+import { getAvatarColor, getInitials } from '../components/NotificationManager';
 import { 
   Calendar, 
   Clock, 
@@ -221,7 +221,7 @@ export default function CalendarView() {
                         <img src={selectedTask.employeeId.avatar} alt={selectedTask.employeeId.name} className="h-full w-full object-cover" />
                       ) : (
                         <div className={`h-full w-full flex items-center justify-center font-bold text-xs ${getAvatarColor(selectedTask.employeeId?.name)}`}>
-                          {selectedTask.employeeId?.name ? selectedTask.employeeId.name[0].toUpperCase() : 'E'}
+                          {getInitials(selectedTask.employeeId?.name)}
                         </div>
                       )}
                     </div>
