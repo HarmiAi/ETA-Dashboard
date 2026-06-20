@@ -310,5 +310,84 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// @route   POST api/tasks/:id/hold
+// @desc    Put task on hold
+// @access  Private
+router.post('/:id/hold', async (req, res) => {
+  const { reason } = req.body;
+  try {
+    let task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    task.status = 'On Hold';
+    task.history.push({
+      status: 'On Hold',
+      eta: task.eta,
+      reason: reason || 'Task put on hold by Manager',
+    });
+
+    await task.save();
+    await task.populate('employeeId', 'name email department designation');
+
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      console.log("[Socket Emit Trace]", {
+        event: 'taskUpdated',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: task._id, status: 'On Hold' }
+      });
+      io.emit('taskUpdated', task);
+    }
+
+    res.json(task);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   POST api/tasks/:id/resume
+// @desc    Resume task
+// @access  Private
+router.post('/:id/resume', async (req, res) => {
+  const { reason } = req.body;
+  try {
+    let task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    task.status = 'In Progress';
+    task.notified = false; // Reset notification trigger when resuming
+    task.history.push({
+      status: 'In Progress',
+      eta: task.eta,
+      reason: reason || 'Task resumed by Manager',
+    });
+
+    await task.save();
+    await task.populate('employeeId', 'name email department designation');
+
+    if (req.app.get('io')) {
+      const io = req.app.get('io');
+      console.log("[Socket Emit Trace]", {
+        event: 'taskUpdated',
+        targetRoom: 'global (all)',
+        connectedClients: io.engine.clientsCount,
+        payload: { taskId: task._id, status: 'In Progress' }
+      });
+      io.emit('taskUpdated', task);
+    }
+
+    res.json(task);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 module.exports = router;
 module.exports.checkAndMarkOverdue = checkAndMarkOverdue;

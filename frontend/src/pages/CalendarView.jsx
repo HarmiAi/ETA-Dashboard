@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchTasks, completeTask, extendTask } from '../store/taskSlice';
+import { fetchTasks, completeTask, extendTask, holdTask, resumeTask } from '../store/taskSlice';
 import { getAvatarColor, getInitials } from '../components/NotificationManager';
 import { 
   Calendar, 
@@ -12,7 +12,9 @@ import {
   ChevronRight, 
   Activity, 
   CornerDownRight,
-  X
+  X,
+  Pause,
+  Play
 } from 'lucide-react';
 
 export default function CalendarView() {
@@ -24,6 +26,30 @@ export default function CalendarView() {
   const [showExtendForm, setShowExtendForm] = useState(false);
   const [extendEta, setExtendEta] = useState('');
   const [extendReason, setExtendReason] = useState('');
+
+  // Hold Modal
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdTaskId, setHoldTaskId] = useState(null);
+  const [holdReason, setHoldReason] = useState('');
+
+  const handleHoldSubmit = async (e) => {
+    e.preventDefault();
+    if (!holdTaskId || !holdReason) return;
+
+    const result = await dispatch(holdTask({ 
+      id: holdTaskId, 
+      reason: holdReason 
+    }));
+
+    if (!result.error) {
+      if (selectedTask && selectedTask._id === holdTaskId) {
+        setSelectedTask(result.payload);
+      }
+      setShowHoldModal(false);
+      setHoldTaskId(null);
+      setHoldReason('');
+    }
+  };
 
   useEffect(() => {
     dispatch(fetchTasks());
@@ -67,10 +93,15 @@ export default function CalendarView() {
   const thisWeek = [];
   const future = [];
   const completed = [];
+  const onHold = [];
 
   tasks.forEach(task => {
     if (task.status === 'Completed') {
       completed.push(task);
+      return;
+    }
+    if (task.status === 'On Hold') {
+      onHold.push(task);
       return;
     }
 
@@ -94,6 +125,7 @@ export default function CalendarView() {
     { name: 'Due Tomorrow', list: tomorrow, color: 'text-blue-600', border: 'border-blue-200/80', bg: 'bg-white', icon: Clock },
     { name: 'Due Next 7 Days', list: thisWeek, color: 'text-emerald-600', border: 'border-emerald-200/80', bg: 'bg-white', icon: Calendar },
     { name: 'Due Later', list: future, color: 'text-slate-500', border: 'border-slate-200', bg: 'bg-white', icon: Calendar },
+    { name: 'On Hold', list: onHold, color: 'text-purple-600', border: 'border-purple-200/80', bg: 'bg-[#FBF8FF]', icon: Pause },
     { name: 'Completed History', list: completed, color: 'text-emerald-600', border: 'border-emerald-250', bg: 'bg-white', icon: CheckCircle },
   ];
 
@@ -162,6 +194,7 @@ export default function CalendarView() {
                           <span className={`px-2 py-0.2 rounded-full border font-bold ${
                             task.status === 'Completed' ? 'bg-emerald-50 text-emerald-650 border-emerald-200' :
                             task.status === 'Overdue' ? 'bg-red-50 text-red-650 border-red-200 animate-pulse' :
+                            task.status === 'On Hold' ? 'bg-purple-50 text-purple-700 border-purple-200' :
                             'bg-slate-100 text-slate-500 border-slate-200'
                           }`}>
                             {task.status}
@@ -245,6 +278,7 @@ export default function CalendarView() {
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-block mt-1 border ${
                       selectedTask.status === 'Completed' ? 'bg-emerald-50 text-emerald-650 border-emerald-200' :
                       selectedTask.status === 'Overdue' ? 'bg-red-50 text-red-650 border-red-200 animate-pulse' :
+                      selectedTask.status === 'On Hold' ? 'bg-purple-50 text-purple-700 border-purple-200' :
                       'bg-slate-100 text-slate-500 border-slate-200'
                     }`}>
                       {selectedTask.status}
@@ -255,23 +289,65 @@ export default function CalendarView() {
                 {/* Actions */}
                 {selectedTask.status !== 'Completed' && !showExtendForm && (
                   <div className="flex gap-2 pt-2 border-t border-[#D1DFDA]">
-                    <button
-                      onClick={() => handleCompleteTask(selectedTask._id)}
-                      className="flex-grow py-2 bg-[#22C55E] hover:bg-[#16A34A] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-lg shadow-emerald-500/10 active:scale-95 clay-btn"
-                    >
-                      Complete
-                    </button>
-                    <button
-                      onClick={() => {
-                        const tzoffset = (new Date(selectedTask.eta)).getTimezoneOffset() * 60000;
-                        const formatted = (new Date(new Date(selectedTask.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
-                        setExtendEta(formatted);
-                        setShowExtendForm(true);
-                      }}
-                      className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition border border-[#D1DFDA]"
-                    >
-                      Extend
-                    </button>
+                    {selectedTask.status === 'On Hold' ? (
+                      <>
+                        <button
+                          onClick={async () => {
+                            const result = await dispatch(resumeTask({ id: selectedTask._id }));
+                            if (!result.error) {
+                              setSelectedTask(result.payload);
+                            }
+                          }}
+                          className="flex-grow py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
+                        >
+                          <Play className="h-4 w-4" />
+                          Resume
+                        </button>
+                        <button
+                          onClick={() => {
+                            const tzoffset = (new Date(selectedTask.eta)).getTimezoneOffset() * 60000;
+                            const formatted = (new Date(new Date(selectedTask.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
+                            setExtendEta(formatted);
+                            setShowExtendForm(true);
+                          }}
+                          className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition border border-[#D1DFDA]"
+                        >
+                          Extend
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleCompleteTask(selectedTask._id)}
+                          className="flex-grow py-2 bg-[#22C55E] hover:bg-[#16A34A] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-lg shadow-emerald-500/10 active:scale-95 clay-btn"
+                        >
+                          Complete
+                        </button>
+                        <button
+                          onClick={() => {
+                            setHoldTaskId(selectedTask._id);
+                            setHoldReason('');
+                            setShowHoldModal(true);
+                          }}
+                          className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition active:scale-95 flex items-center gap-1.5 shadow-sm shadow-purple-500/5"
+                          title="Put Task On Hold"
+                        >
+                          <Pause className="h-3.5 w-3.5" />
+                          Hold
+                        </button>
+                        <button
+                          onClick={() => {
+                            const tzoffset = (new Date(selectedTask.eta)).getTimezoneOffset() * 60000;
+                            const formatted = (new Date(new Date(selectedTask.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
+                            setExtendEta(formatted);
+                            setShowExtendForm(true);
+                          }}
+                          className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition border border-[#D1DFDA]"
+                        >
+                          Extend
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -347,6 +423,51 @@ export default function CalendarView() {
           </AnimatePresence>
         </div>
       </div>
+      {/* Hold Task Modal Overlay */}
+      {showHoldModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-[28px] bg-white border border-[#D1DFDA] shadow-2xl overflow-hidden text-left">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-extrabold text-slate-800">Put Task On Hold</h3>
+                <button onClick={() => setShowHoldModal(false)} className="text-slate-400 hover:text-slate-700">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleHoldSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-555 mb-1">Reason for Hold</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Waiting for client feedback"
+                    value={holdReason}
+                    onChange={(e) => setHoldReason(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-[#D1DFDA] text-slate-800 text-xs"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 text-xs pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowHoldModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-650 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl clay-btn transition active:scale-95 shadow-md shadow-purple-500/10"
+                  >
+                    Confirm Hold
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }

@@ -105,7 +105,7 @@ export default function NotificationManager() {
     const now = Date.now();
 
     tasks.forEach((task) => {
-      if (task.status === 'Completed') return;
+      if (task.status === 'Completed' || task.status === 'On Hold') return;
 
       const etaTime = new Date(task.eta).getTime();
       const delay = etaTime - now;
@@ -133,7 +133,7 @@ export default function NotificationManager() {
       const currentTasks = tasksRef.current || [];
 
       currentTasks.forEach((task) => {
-        if (task.status === 'Completed') return;
+        if (task.status === 'Completed' || task.status === 'On Hold') return;
 
         const etaTime = new Date(task.eta).getTime();
 

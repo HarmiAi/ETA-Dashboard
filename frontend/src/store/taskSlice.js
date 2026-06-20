@@ -119,6 +119,42 @@ export const markTaskNotStarted = createAsyncThunk(
   }
 );
 
+export const holdTask = createAsyncThunk(
+  'tasks/hold',
+  async ({ id, reason }, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${id}/hold`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ reason }),
+      });
+      const data = await response.json();
+      if (!response.ok) return rejectWithValue(data.message || 'Failed to put task on hold');
+      return data;
+    } catch (err) {
+      return rejectWithValue(err.message || 'Server error');
+    }
+  }
+);
+
+export const resumeTask = createAsyncThunk(
+  'tasks/resume',
+  async ({ id, reason }, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${id}/resume`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ reason }),
+      });
+      const data = await response.json();
+      if (!response.ok) return rejectWithValue(data.message || 'Failed to resume task');
+      return data;
+    } catch (err) {
+      return rejectWithValue(err.message || 'Server error');
+    }
+  }
+);
+
 export const deleteTask = createAsyncThunk(
   'tasks/delete',
   async (id, { rejectWithValue }) => {
@@ -210,8 +246,11 @@ const taskSlice = createSlice({
       })
       .addCase(createTask.fulfilled, (state, action) => {
         state.loading = false;
-        state.list.push(action.payload);
-        state.list.sort((a, b) => new Date(a.eta) - new Date(b.eta));
+        const exists = state.list.some((t) => t._id === action.payload._id);
+        if (!exists) {
+          state.list.push(action.payload);
+          state.list.sort((a, b) => new Date(a.eta) - new Date(b.eta));
+        }
       })
       .addCase(createTask.rejected, (state, action) => {
         state.loading = false;
@@ -250,6 +289,24 @@ const taskSlice = createSlice({
       })
       .addCase(markTaskNotStarted.fulfilled, updateTaskInList)
       .addCase(markTaskNotStarted.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      // Hold Task
+      .addCase(holdTask.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(holdTask.fulfilled, updateTaskInList)
+      .addCase(holdTask.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      // Resume Task
+      .addCase(resumeTask.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(resumeTask.fulfilled, updateTaskInList)
+      .addCase(resumeTask.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })

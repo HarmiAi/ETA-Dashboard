@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
-import { fetchTasks, completeTask, extendTask } from '../store/taskSlice';
-import { AlertTriangle, Clock, Check, Calendar, ArrowRight, CornerDownRight, X } from 'lucide-react';
+import { fetchTasks, completeTask, extendTask, holdTask } from '../store/taskSlice';
+import { AlertTriangle, Clock, Check, Calendar, ArrowRight, CornerDownRight, X, Pause } from 'lucide-react';
 import { getAvatarColor, getInitials } from '../components/NotificationManager';
 
 export default function FollowUps() {
@@ -15,6 +15,27 @@ export default function FollowUps() {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [newEta, setNewEta] = useState('');
   const [reason, setReason] = useState('');
+
+  // Hold Modal
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdTaskId, setHoldTaskId] = useState(null);
+  const [holdReason, setHoldReason] = useState('');
+
+  const handleHoldSubmit = async (e) => {
+    e.preventDefault();
+    if (!holdTaskId || !holdReason) return;
+
+    const result = await dispatch(holdTask({ 
+      id: holdTaskId, 
+      reason: holdReason 
+    }));
+
+    if (!result.error) {
+      setShowHoldModal(false);
+      setHoldTaskId(null);
+      setHoldReason('');
+    }
+  };
 
   useEffect(() => {
     dispatch(fetchTasks());
@@ -112,10 +133,22 @@ export default function FollowUps() {
                 <div className="flex items-center gap-2 lg:self-center shrink-0 pl-2 lg:pl-0">
                   <button
                     onClick={() => dispatch(completeTask(task._id))}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-emerald-500/10 active:scale-95 clay-btn"
+                    className="px-4 py-2 bg-[#22C55E] hover:bg-[#16A34A] text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-emerald-500/10 active:scale-95 clay-btn"
                   >
                     <Check className="h-4 w-4" />
                     Mark Completed
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHoldTaskId(task._id);
+                      setHoldReason('');
+                      setShowHoldModal(true);
+                    }}
+                    className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition active:scale-95 flex items-center gap-1.5 shadow-sm shadow-purple-500/5"
+                    title="Put Task On Hold"
+                  >
+                    <Pause className="h-3.5 w-3.5" />
+                    Hold
                   </button>
                   <button
                     onClick={() => {
@@ -187,6 +220,52 @@ export default function FollowUps() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Hold Task Modal Overlay */}
+      {showHoldModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-[28px] bg-white border border-[#D1DFDA] shadow-2xl overflow-hidden text-left">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-extrabold text-slate-800">Put Task On Hold</h3>
+                <button onClick={() => setShowHoldModal(false)} className="text-slate-400 hover:text-slate-700">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleHoldSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-555 mb-1">Reason for Hold</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Waiting for client feedback"
+                    value={holdReason}
+                    onChange={(e) => setHoldReason(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-[#D1DFDA] text-slate-800 text-xs"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 text-xs pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowHoldModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-650 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl clay-btn transition active:scale-95 shadow-md shadow-purple-500/10"
+                  >
+                    Confirm Hold
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

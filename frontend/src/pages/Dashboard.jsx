@@ -9,7 +9,9 @@ import {
   markTaskNotStarted, 
   deleteTask, 
   clearTaskError,
-  closeAssignModal
+  closeAssignModal,
+  holdTask,
+  resumeTask
 } from '../store/taskSlice';
 import { fetchEmployees } from '../store/employeeSlice';
 import Mascot from '../components/Mascot';
@@ -20,6 +22,7 @@ import {
   CheckCircle, 
   Clock, 
   Play, 
+  Pause,
   Calendar, 
   AlertTriangle, 
   Trash2, 
@@ -61,6 +64,11 @@ export default function Dashboard() {
   const [extendTaskId, setExtendTaskId] = useState(null);
   const [extendEta, setExtendEta] = useState('');
   const [extendReason, setExtendReason] = useState('');
+
+  // Hold Modal
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdTaskId, setHoldTaskId] = useState(null);
+  const [holdReason, setHoldReason] = useState('');
 
   // Delete Confirm
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -119,6 +127,22 @@ export default function Dashboard() {
       setExtendTaskId(null);
       setExtendEta('');
       setExtendReason('');
+    }
+  };
+
+  const handleHoldSubmit = async (e) => {
+    e.preventDefault();
+    if (!holdTaskId || !holdReason) return;
+
+    const result = await dispatch(holdTask({ 
+      id: holdTaskId, 
+      reason: holdReason 
+    }));
+
+    if (!result.error) {
+      setShowHoldModal(false);
+      setHoldTaskId(null);
+      setHoldReason('');
     }
   };
 
@@ -396,7 +420,8 @@ export default function Dashboard() {
                 variants={itemVariants}
                 whileHover={{ y: -3 }}
                 className={`clay-card p-5 bg-white relative flex flex-col justify-between ${
-                  task.status === 'Overdue' ? 'border-red-300 bg-red-50/10' : ''
+                  task.status === 'Overdue' ? 'border-red-300 bg-red-50/10' :
+                  task.status === 'On Hold' ? 'border-purple-300 bg-purple-50/10' : ''
                 }`}
               >
                 {/* Top header block */}
@@ -414,6 +439,7 @@ export default function Dashboard() {
                       task.status === 'Completed' ? 'bg-emerald-50 text-emerald-650 border-emerald-200' :
                       task.status === 'Overdue' ? 'bg-red-50 text-red-650 border-red-200 animate-pulse' :
                       task.status === 'In Progress' ? 'bg-blue-50 text-blue-650 border-blue-200' :
+                      task.status === 'On Hold' ? 'bg-purple-50 text-purple-700 border-purple-200' :
                       'bg-slate-100 text-slate-500 border-slate-200'
                     }`}>
                       {task.status}
@@ -450,14 +476,21 @@ export default function Dashboard() {
 
                   {/* Actions footer block */}
                   <div className="flex gap-2 text-xs pt-1.5 border-t border-[#D1DFDA]/60">
-                    {task.status !== 'Completed' ? (
+                    {task.status === 'Completed' ? (
+                      <button
+                        onClick={() => dispatch(markTaskNotStarted(task._id))}
+                        className="w-full py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
+                      >
+                        Reopen Task
+                      </button>
+                    ) : task.status === 'On Hold' ? (
                       <>
                         <button
-                          onClick={() => dispatch(completeTask(task._id))}
-                          className="flex-1 py-1.5 bg-[#22C55E] hover:bg-[#16A34A] text-white font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
+                          onClick={() => dispatch(resumeTask({ id: task._id }))}
+                          className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
                         >
-                          <Check className="h-3.5 w-3.5" />
-                          Complete
+                          <Play className="h-3.5 w-3.5" />
+                          Resume
                         </button>
                         <button
                           onClick={() => {
@@ -473,12 +506,39 @@ export default function Dashboard() {
                         </button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => dispatch(markTaskNotStarted(task._id))}
-                        className="w-full py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
-                      >
-                        Reopen Task
-                      </button>
+                      <>
+                        <button
+                          onClick={() => dispatch(completeTask(task._id))}
+                          className="flex-1 py-1.5 bg-[#22C55E] hover:bg-[#16A34A] text-white font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          Complete
+                        </button>
+                        <button
+                          onClick={() => {
+                            setHoldTaskId(task._id);
+                            setHoldReason('');
+                            setShowHoldModal(true);
+                          }}
+                          className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-xl transition border border-purple-200 active:scale-95 flex items-center justify-center gap-1.5 shadow-sm shadow-purple-500/5"
+                          title="Put Task On Hold"
+                        >
+                          <Pause className="h-3.5 w-3.5" />
+                          Hold
+                        </button>
+                        <button
+                          onClick={() => {
+                            setExtendTaskId(task._id);
+                            const tzoffset = (new Date(task.eta)).getTimezoneOffset() * 60000;
+                            const formatted = (new Date(new Date(task.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
+                            setExtendEta(formatted);
+                            setShowExtendModal(true);
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
+                        >
+                          Extend
+                        </button>
+                      </>
                     )}
                     
                     <button
@@ -658,6 +718,52 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Hold Task Modal Overlay */}
+      {showHoldModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-[28px] bg-white border border-[#D1DFDA] shadow-2xl overflow-hidden text-left">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-extrabold text-slate-800">Put Task On Hold</h3>
+                <button onClick={() => setShowHoldModal(false)} className="text-slate-400 hover:text-slate-700">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleHoldSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-550 mb-1">Reason for Hold</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Waiting for client feedback"
+                    value={holdReason}
+                    onChange={(e) => setHoldReason(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-[#D1DFDA] text-slate-800 text-xs"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 text-xs pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowHoldModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-650 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl clay-btn transition active:scale-95 shadow-md shadow-purple-500/10"
+                  >
+                    Confirm Hold
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Overlay */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm">
@@ -723,6 +829,7 @@ function TimelineCard({ task }) {
         <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded-full border mt-0.5 inline-block ${
           task.status === 'Completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
           task.status === 'Overdue' ? 'bg-red-50 text-red-650 border-red-200' :
+          task.status === 'On Hold' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
           'bg-slate-100 text-slate-500 border border-slate-200'
         }`}>
           {task.status}

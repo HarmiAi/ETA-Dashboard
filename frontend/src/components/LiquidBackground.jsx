@@ -35,7 +35,7 @@ export default function LiquidBackground() {
         style={{ animationDelay: '0s' }}
       />
       <div 
-        className="absolute bottom-[-15%] right-[-10%] w-[65%] h-[65%] rounded-full bg-purple-650/10 blur-[140px] animate-[float-blob-2_34s_infinite_ease-in-out]"
+        className="absolute bottom-[-15%] right-[-10%] w-[65%] h-[65%] rounded-full bg-purple-600/10 blur-[140px] animate-[float-blob-2_34s_infinite_ease-in-out]"
         style={{ animationDelay: '2s' }}
       />
       <div 
