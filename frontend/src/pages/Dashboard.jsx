@@ -11,7 +11,8 @@ import {
   clearTaskError,
   closeAssignModal,
   holdTask,
-  resumeTask
+  resumeTask,
+  openAssignModal
 } from '../store/taskSlice';
 import { fetchEmployees } from '../store/employeeSlice';
 import Mascot from '../components/Mascot';
@@ -85,6 +86,28 @@ export default function Dashboard() {
 
   // Expanded Employee Accordion State
   const [expandedEmployeeId, setExpandedEmployeeId] = useState(null);
+
+  // Selected Date Filter State (defaults to Today)
+  const [selectedDate, setSelectedDate] = useState(new Date());
+
+  // Date comparison helpers
+  const isSameDay = (d1, d2) => {
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  };
+
+  const getRelativeDateLabel = (date) => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+    if (isSameDay(date, today)) return 'Today';
+    if (isSameDay(date, yesterday)) return 'Yesterday';
+    if (isSameDay(date, tomorrow)) return 'Tomorrow';
+
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
 
   // Sync Redux searchQuery with local boardSearch
   useEffect(() => {
@@ -258,8 +281,11 @@ export default function Dashboard() {
           matchesDueDate = eta >= todayStart && eta <= weekEnd;
         }
       }
+
+      // Date Filter (ETA must match selectedDate day)
+      const matchesDate = isSameDay(new Date(task.eta), selectedDate);
       
-      return matchesSearch && matchesEmployee && matchesDepartment && matchesPriority && matchesStatus && matchesDueDate;
+      return matchesSearch && matchesEmployee && matchesDepartment && matchesPriority && matchesStatus && matchesDueDate && matchesDate;
     });
     
     // Group tasks
@@ -275,7 +301,7 @@ export default function Dashboard() {
     });
     
     return Object.values(groups).sort((a, b) => a.employee.name.localeCompare(b.employee.name));
-  }, [tasks, boardSearch, filterEmployee, filterDepartment, filterPriority, filterStatus, filterDueDate]);
+  }, [tasks, boardSearch, filterEmployee, filterDepartment, filterPriority, filterStatus, filterDueDate, selectedDate]);
 
   // 2. Summary stats for active, priority, due, overdue, and completed today
   const boardStats = React.useMemo(() => {
@@ -318,6 +344,83 @@ export default function Dashboard() {
 
     return { active, highPriority, dueToday, overdue, completedToday };
   }, [tasks]);
+
+  // Calculate summary stats for the selected date only, respecting the active filters
+  const selectedDateStats = React.useMemo(() => {
+    let total = 0;
+    let completed = 0;
+    let pending = 0;
+    let overdue = 0;
+
+    tasks.forEach(task => {
+      // Must be on the selected date
+      const etaDate = new Date(task.eta);
+      if (!isSameDay(etaDate, selectedDate)) return;
+
+      // Check if it matches other active filters
+      const matchesSearch = boardSearch 
+        ? (task.title.toLowerCase().includes(boardSearch.toLowerCase()) || 
+           (task.employeeId?.name && task.employeeId.name.toLowerCase().includes(boardSearch.toLowerCase())))
+        : true;
+      
+      const matchesEmployee = filterEmployee === 'All' 
+        ? true 
+        : (task.employeeId?._id === filterEmployee);
+        
+      const matchesDepartment = filterDepartment === 'All'
+        ? true
+        : (task.employeeId?.department === filterDepartment);
+        
+      const matchesPriority = filterPriority === 'All'
+        ? true
+        : (task.priority === filterPriority);
+        
+      const matchesStatus = filterStatus === 'All'
+        ? true
+        : (task.status === filterStatus);
+
+      let matchesDueDate = true;
+      if (filterDueDate !== 'All') {
+        const eta = new Date(task.eta);
+        const todayStart = new Date();
+        todayStart.setHours(0,0,0,0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23,59,59,999);
+        const tomorrowStart = new Date(todayStart.getTime() + 24*60*60*1000);
+        const tomorrowEnd = new Date(todayEnd.getTime() + 24*60*60*1000);
+        const weekEnd = new Date(todayEnd.getTime() + 7*24*60*60*1000);
+        
+        if (filterDueDate === 'Overdue') {
+          matchesDueDate = eta < new Date() && task.status !== 'Completed';
+        } else if (filterDueDate === 'Today') {
+          matchesDueDate = eta >= todayStart && eta <= todayEnd;
+        } else if (filterDueDate === 'Tomorrow') {
+          matchesDueDate = eta >= tomorrowStart && eta <= tomorrowEnd;
+        } else if (filterDueDate === 'This Week') {
+          matchesDueDate = eta >= todayStart && eta <= weekEnd;
+        }
+      }
+
+      if (matchesSearch && matchesEmployee && matchesDepartment && matchesPriority && matchesStatus && matchesDueDate) {
+        total++;
+        if (task.status === 'Completed') {
+          completed++;
+        } else {
+          pending++;
+          if (task.status === 'Overdue' || (new Date(task.eta) < new Date() && task.status !== 'On Hold')) {
+            overdue++;
+          }
+        }
+      }
+    });
+
+    return { total, completed, pending, overdue };
+  }, [tasks, selectedDate, boardSearch, filterEmployee, filterDepartment, filterPriority, filterStatus, filterDueDate]);
+
+  // Check if there are ANY tasks scheduled on the selected date at all
+  const hasAnyTasksOnSelectedDate = React.useMemo(() => {
+    return tasks.some(task => isSameDay(new Date(task.eta), selectedDate));
+  }, [tasks, selectedDate]);
 
   // Auto-expand first employee group if nothing is expanded
   useEffect(() => {
@@ -720,30 +823,159 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Date Filter & Summary Stats Bar */}
+        <div className="clay-card p-4 bg-white/65 dark:bg-[#182421]/60 backdrop-blur-lg border border-[#D1DFDA]/85 dark:border-[#24332F]/85 rounded-2xl mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md shadow-emerald-500/[0.01]">
+          {/* Left Side: Date Selection Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100/50 dark:bg-[#1D2C28]/50 p-1 rounded-xl border border-slate-200/50 dark:border-[#24332F]/50">
+              {/* Prev Day */}
+              <button
+                onClick={() => {
+                  const newDate = new Date(selectedDate);
+                  newDate.setDate(newDate.getDate() - 1);
+                  setSelectedDate(newDate);
+                }}
+                className="p-1.5 hover:bg-white dark:hover:bg-[#24332F] rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition active:scale-95 shadow-xs"
+                title="Previous Day"
+              >
+                <ChevronRight className="h-4 w-4 rotate-180" />
+              </button>
+
+              {/* Quick Pills */}
+              {['Yesterday', 'Today', 'Tomorrow'].map((preset) => {
+                const today = new Date();
+                let targetDate = new Date();
+                if (preset === 'Yesterday') targetDate.setDate(today.getDate() - 1);
+                if (preset === 'Tomorrow') targetDate.setDate(today.getDate() + 1);
+
+                const isActive = isSameDay(selectedDate, targetDate);
+
+                return (
+                  <button
+                    key={preset}
+                    onClick={() => setSelectedDate(targetDate)}
+                    className={`px-3 py-1 text-[11px] font-extrabold rounded-lg transition-all duration-200 ${
+                      isActive
+                        ? 'bg-[#5EAD93] text-white shadow-sm'
+                        : 'text-slate-650 dark:text-slate-350 hover:bg-white/60 dark:hover:bg-[#24332F]/60'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                );
+              })}
+
+              {/* Next Day */}
+              <button
+                onClick={() => {
+                  const newDate = new Date(selectedDate);
+                  newDate.setDate(newDate.getDate() + 1);
+                  setSelectedDate(newDate);
+                }}
+                className="p-1.5 hover:bg-white dark:hover:bg-[#24332F] rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition active:scale-95 shadow-xs"
+                title="Next Day"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Custom Date Picker */}
+            <div className="relative flex items-center bg-slate-100/50 dark:bg-[#1D2C28]/50 px-3 py-1.5 rounded-xl border border-slate-200/50 dark:border-[#24332F]/50 group hover:border-[#5EAD93]/40 dark:hover:border-[#5EAD93]/40 transition">
+              <Calendar className="h-3.5 w-3.5 text-[#5EAD93] mr-2 shrink-0" />
+              <input
+                type="date"
+                value={selectedDate.toISOString().split('T')[0]}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const [year, month, day] = e.target.value.split('-').map(Number);
+                    setSelectedDate(new Date(year, month - 1, day));
+                  }
+                }}
+                className="bg-transparent border-none text-[11px] font-extrabold text-slate-750 dark:text-slate-205 focus:outline-none cursor-pointer w-24 tracking-wide"
+              />
+            </div>
+            
+            {/* Selected Date Label */}
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 ml-1 uppercase tracking-wider hidden sm:inline">
+              ({getRelativeDateLabel(selectedDate)})
+            </span>
+          </div>
+
+          {/* Right Side: Selected Date Summary Metrics */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-extrabold uppercase tracking-widest mr-1.5 hidden lg:inline">Selected Date Stats:</span>
+            
+            {/* Stat Tag: Total */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50/70 dark:bg-blue-950/10 border border-blue-100/35 dark:border-blue-900/20 text-blue-650 dark:text-blue-400 rounded-lg text-[10px] font-bold shadow-xs">
+              <span>Total:</span>
+              <span className="px-1.5 py-0.2 bg-blue-100/60 dark:bg-blue-900/30 rounded-md font-extrabold">{selectedDateStats.total}</span>
+            </div>
+
+            {/* Stat Tag: Completed */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50/70 dark:bg-emerald-950/10 border border-emerald-100/35 dark:border-emerald-900/20 text-emerald-650 dark:text-emerald-400 rounded-lg text-[10px] font-bold shadow-xs">
+              <span>Completed:</span>
+              <span className="px-1.5 py-0.2 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-md font-extrabold">{selectedDateStats.completed}</span>
+            </div>
+
+            {/* Stat Tag: Pending */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50/70 dark:bg-amber-950/10 border border-amber-100/35 dark:border-amber-900/20 text-amber-650 dark:text-amber-450 rounded-lg text-[10px] font-bold shadow-xs">
+              <span>Pending:</span>
+              <span className="px-1.5 py-0.2 bg-amber-100/60 dark:bg-amber-900/30 rounded-md font-extrabold">{selectedDateStats.pending}</span>
+            </div>
+
+            {/* Stat Tag: Overdue (Only if > 0) */}
+            {selectedDateStats.overdue > 0 && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50/80 dark:bg-red-950/10 border border-red-100/35 dark:border-red-900/20 text-red-650 dark:text-red-400 rounded-lg text-[10px] font-bold shadow-xs animate-pulse">
+                <span>Overdue:</span>
+                <span className="px-1.5 py-0.2 bg-red-100/60 dark:bg-red-900/30 rounded-md font-extrabold">{selectedDateStats.overdue}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Grouped Accordion List Container */}
         <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-200">
           {groupedTasksByEmployee.length === 0 ? (
-            /* Premium Empty State */
-            <div className="py-20 text-center bg-slate-50/20 border border-[#D1DFDA] rounded-2xl shadow-sm">
-              <Calendar className="h-12 w-12 mx-auto text-slate-300 mb-3" />
-              <p className="font-bold text-slate-700 text-sm">No tasks matched your filters</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto font-semibold">
-                Try widening your filters or search terms, or assign new tasks to employees.
-              </p>
-              <button 
-                onClick={() => {
-                  setBoardSearch('');
-                  setFilterEmployee('All');
-                  setFilterDepartment('All');
-                  setFilterPriority('All');
-                  setFilterStatus('All');
-                  setFilterDueDate('All');
-                }}
-                className="mt-4 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition active:scale-95 shadow-sm"
-              >
-                Clear All Filters
-              </button>
-            </div>
+            !hasAnyTasksOnSelectedDate ? (
+              /* Premium Empty State: No tasks scheduled at all for this date */
+              <div className="py-20 text-center bg-slate-50/20 border border-[#D1DFDA] dark:border-[#24332F] rounded-2xl shadow-sm">
+                <Calendar className="h-12 w-12 mx-auto text-slate-350 dark:text-slate-650 mb-3" />
+                <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+                  No Tasks Scheduled for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+                <p className="text-xs text-slate-450 dark:text-slate-400 mt-1 max-w-sm mx-auto font-semibold">
+                  Enjoy the clear day! Or assign a new task to get started on this date.
+                </p>
+                <button 
+                  onClick={() => dispatch(openAssignModal())}
+                  className="mt-4 px-4 py-2 bg-[#5EAD93] hover:bg-[#4D967D] text-white text-xs font-bold rounded-xl transition active:scale-95 shadow-sm"
+                >
+                  Assign New Task
+                </button>
+              </div>
+            ) : (
+              /* Premium Empty State: Tasks exist but filtered out */
+              <div className="py-20 text-center bg-slate-50/20 border border-[#D1DFDA] dark:border-[#24332F] rounded-2xl shadow-sm">
+                <Filter className="h-12 w-12 mx-auto text-slate-350 dark:text-slate-650 mb-3" />
+                <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">No tasks matched your active filters</p>
+                <p className="text-xs text-slate-450 dark:text-slate-400 mt-1 max-w-sm mx-auto font-semibold">
+                  Try widening your filters or search terms for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.
+                </p>
+                <button 
+                  onClick={() => {
+                    setBoardSearch('');
+                    setFilterEmployee('All');
+                    setFilterDepartment('All');
+                    setFilterPriority('All');
+                    setFilterStatus('All');
+                    setFilterDueDate('All');
+                  }}
+                  className="mt-4 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition active:scale-95 shadow-sm"
+                >
+                  Clear Active Filters
+                </button>
+              </div>
+            )
           ) : (
             groupedTasksByEmployee.map((group) => {
               const empId = group.employee._id || 'unassigned';
