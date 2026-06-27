@@ -41,7 +41,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
   ];
 
   return (
-    <aside  style={{zIndex: 9999}} className={`w-20 bg-[#5EAD93] flex flex-col h-[calc(100vh-32px)] my-4 ml-4 rounded-[32px] fixed top-0 z-45 select-none items-center py-6 justify-between shadow-2xl shadow-emerald-500/15 border border-white/15 transition-all duration-300 ${
+    <aside  style={{zIndex: 9999}} className={`w-20 bg-[#5EAD93] flex flex-col h-[calc(100vh-32px)] my-4 ml-4 rounded-[32px] fixed top-0 z-45 select-none items-center py-6 justify-between shadow-2xl shadow-emerald-500/15 border border-white/15 transition-all duration-300 overflow-y-auto scrollbar-none ${
       isOpen ? 'left-0' : '-left-32 md:left-0'
     }`}>
       {/* Top Brand Logo */}

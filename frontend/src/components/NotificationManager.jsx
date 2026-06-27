@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -11,6 +11,7 @@ import {
 import { notificationService } from '../services/notificationService';
 import { io } from 'socket.io-client';
 import { getBackendUrl } from '../store/authSlice';
+import { Bell, Clock } from 'lucide-react';
 
 // Simple beep utility for in-app alert feedback
 const playBeep = () => {
@@ -92,73 +93,125 @@ export default function NotificationManager() {
     };
   }, [dispatch, navigate]);
 
-  // 2A. Schedule high-precision timeouts for future ETAs (rescheduled/created in the future)
-  useEffect(() => {
-    if (!tasks || tasks.length === 0) return;
-
-    // Clear old active timeout timers
-    Object.keys(timersRef.current).forEach((id) => {
-      clearTimeout(timersRef.current[id]);
-      delete timersRef.current[id];
-    });
-
-    const now = Date.now();
-
-    tasks.forEach((task) => {
-      if (task.status === 'Completed' || task.status === 'On Hold') return;
-
-      const etaTime = new Date(task.eta).getTime();
-      const delay = etaTime - now;
-
-      // Case A: Task ETA is in the future. Schedule a high-precision timeout exactly at ETA.
-      if (delay > 0) {
-        timersRef.current[task._id] = setTimeout(() => {
-          triggerTaskNotification(task);
-          // Set task to Overdue state locally and trigger server update
-          dispatch(socketTaskUpdated({ ...task, status: 'Overdue' }));
-        }, delay);
-      }
-    });
-
-    return () => {
-      Object.keys(timersRef.current).forEach((id) => clearTimeout(timersRef.current[id]));
-    };
-  }, [tasks, dispatch]);
-
-  // 2B. Persistent background monitoring loop for overdue tasks & 15-minute repetitions
-  // Runs continuously every 5 seconds (not affected by state updates)
-  useEffect(() => {
-    const monitoringInterval = setInterval(() => {
-      const currentTime = Date.now();
-      const currentTasks = tasksRef.current || [];
-
-      currentTasks.forEach((task) => {
-        if (task.status === 'Completed' || task.status === 'On Hold') return;
-
-        const etaTime = new Date(task.eta).getTime();
-
-        // If task ETA has passed
-        if (currentTime >= etaTime) {
-          const lastAlertTime = lastAlertTimesRef.current[task._id] || 0;
-          const timeSinceLastAlert = currentTime - lastAlertTime;
-
-          // If never alerted, OR it's been more than 15 minutes since the last alert
-          if (lastAlertTime === 0 || timeSinceLastAlert >= 15 * 60 * 1000) {
-            triggerTaskNotification(task);
-          }
-        }
-      });
-    }, 5000); // Check every 5 seconds for high responsiveness
-
-    return () => {
-      clearInterval(monitoringInterval);
-    };
-  }, []);
+  // 2. Background and Missed Alerts State
+  const [pendingAlerts, setPendingAlerts] = useState([]);
+  const [showInAppModal, setShowInAppModal] = useState(false);
 
   const triggerTaskNotification = (task) => {
     playBeep();
     lastAlertTimesRef.current[task._id] = Date.now();
     notificationService.showNotification(task);
+
+    // Queue in-app alert if tab is hidden
+    if (document.hidden || document.visibilityState === 'hidden') {
+      setPendingAlerts(prev => {
+        if (prev.some(t => t._id === task._id)) return prev;
+        return [...prev, task];
+      });
+    }
+  };
+
+  const checkOverdueTasks = React.useCallback(() => {
+    const currentTime = Date.now();
+    const currentTasks = tasksRef.current || [];
+
+    currentTasks.forEach((task) => {
+      if (task.status === 'Completed' || task.status === 'On Hold') return;
+
+      const etaTime = new Date(task.eta).getTime();
+
+      // If task ETA has passed
+      if (currentTime >= etaTime) {
+        const lastAlertTime = lastAlertTimesRef.current[task._id] || 0;
+        const timeSinceLastAlert = currentTime - lastAlertTime;
+
+        // If never alerted, OR it's been more than 15 minutes since the last alert
+        if (lastAlertTime === 0 || timeSinceLastAlert >= 15 * 60 * 1000) {
+          triggerTaskNotification(task);
+          
+          // Set task to Overdue locally if it's currently In Progress or Not Started
+          if (task.status === 'In Progress' || task.status === 'Not Started') {
+            dispatch(socketTaskUpdated({ ...task, status: 'Overdue' }));
+          }
+        }
+      }
+    });
+  }, [dispatch]);
+
+  // Background Web Worker to prevent browser tab timer throttling
+  useEffect(() => {
+    const workerCode = `
+      let timer = null;
+      self.onmessage = function(e) {
+        if (e.data === 'start') {
+          if (timer) clearInterval(timer);
+          timer = setInterval(() => {
+            self.postMessage('tick');
+          }, 5000);
+        } else if (e.data === 'stop') {
+          if (timer) clearInterval(timer);
+        }
+      };
+    `;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    const worker = new Worker(workerUrl);
+
+    worker.onmessage = (e) => {
+      if (e.data === 'tick') {
+        checkOverdueTasks();
+      }
+    };
+
+    worker.postMessage('start');
+
+    return () => {
+      worker.postMessage('stop');
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+    };
+  }, [checkOverdueTasks]);
+
+  // Listen for tab focus returns to open the missed reminders modal
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && pendingAlerts.length > 0) {
+        setShowInAppModal(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [pendingAlerts]);
+
+  const handleDismissAlert = (taskId) => {
+    setPendingAlerts(prev => {
+      const filtered = prev.filter(t => t._id !== taskId);
+      if (filtered.length === 0) setShowInAppModal(false);
+      return filtered;
+    });
+  };
+
+  const handleDismissAll = () => {
+    setPendingAlerts([]);
+    setShowInAppModal(false);
+  };
+
+  const handleCompleteAlert = async (taskId) => {
+    await dispatch(completeTask(taskId));
+    handleDismissAlert(taskId);
+  };
+
+  const handleSnoozeAlert = async (task) => {
+    const snoozeEta = new Date(Date.now() + 15 * 60 * 1000);
+    await dispatch(extendTask({
+      id: task._id,
+      newEta: snoozeEta.toISOString(),
+      reason: 'Snoozed alarm from in-app missed reminders popup'
+    }));
+    handleDismissAlert(task._id);
   };
 
   // 3. Socket.io Event Handling
@@ -255,7 +308,84 @@ export default function NotificationManager() {
     };
   }, [token, dispatch]);
 
-  return null; // Silent global scheduler manager
+  if (!showInAppModal || pendingAlerts.length === 0) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm text-left select-none animate-in fade-in duration-200">
+      <div className="w-full max-w-md rounded-[24px] bg-white dark:bg-[#182421] border border-[#D1DFDA] dark:border-[#24332F] shadow-2xl p-6 flex flex-col space-y-4">
+        {/* Header */}
+        <div className="flex justify-between items-center pb-2 border-b border-[#D1DFDA]/40 dark:border-[#24332F]/40">
+          <div className="flex items-center gap-2">
+            <Bell className="h-5 w-5 text-purple-650 animate-bounce" />
+            <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+              Missed Reminders
+            </h3>
+          </div>
+          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300">
+            {pendingAlerts.length} Missed
+          </span>
+        </div>
+
+        {/* Scrollable list of notifications */}
+        <div className="max-h-[280px] overflow-y-auto space-y-3 pr-1 scrollbar-thin scrollbar-thumb-slate-200">
+          {pendingAlerts.map((task) => {
+            const employeeName = task.employeeId?.name || 'Employee';
+            return (
+              <div 
+                key={task._id} 
+                className="p-3.5 bg-slate-50/50 dark:bg-[#1D2C28]/20 border border-[#D1DFDA] dark:border-[#24332F] rounded-xl flex flex-col space-y-2.5"
+              >
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[9px] font-extrabold uppercase text-[#5EAD93] dark:text-[#6CD3B4] tracking-wider">
+                      {employeeName}
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-400">
+                      ETA: {new Date(task.eta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 line-clamp-1">
+                    {task.title}
+                  </h4>
+                </div>
+
+                <div className="flex items-center gap-2 text-[10px]">
+                  <button
+                    onClick={() => handleCompleteAlert(task._id)}
+                    className="flex-1 py-1 bg-[#22C55E] hover:bg-[#16A34A] text-white font-bold rounded-lg transition active:scale-95 flex items-center justify-center gap-1 shadow-sm shadow-emerald-500/10"
+                  >
+                    Complete
+                  </button>
+                  <button
+                    onClick={() => handleSnoozeAlert(task)}
+                    className="px-2.5 py-1 bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 font-bold rounded-lg transition border border-purple-200 dark:border-purple-800 active:scale-95"
+                  >
+                    Snooze
+                  </button>
+                  <button
+                    onClick={() => handleDismissAlert(task._id)}
+                    className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 font-bold rounded-lg transition active:scale-95"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 pt-1.5 text-xs">
+          <button
+            onClick={handleDismissAll}
+            className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 font-bold rounded-xl transition text-center active:scale-95"
+          >
+            Dismiss All Reminders
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export const getAvatarColor = (name = 'E') => {

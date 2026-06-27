@@ -36,7 +36,8 @@ import {
   User,
   PlusCircle,
   Loader2,
-  Check
+  Check,
+  ChevronRight
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -73,6 +74,22 @@ export default function Dashboard() {
   // Delete Confirm
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTaskId, setDeleteTaskId] = useState(null);
+
+  // Advanced Filter States
+  const [boardSearch, setBoardSearch] = useState('');
+  const [filterEmployee, setFilterEmployee] = useState('All');
+  const [filterDepartment, setFilterDepartment] = useState('All');
+  const [filterPriority, setFilterPriority] = useState('All');
+  const [filterStatus, setFilterStatus] = useState('All');
+  const [filterDueDate, setFilterDueDate] = useState('All');
+
+  // Expanded Employee Accordion State
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState(null);
+
+  // Sync Redux searchQuery with local boardSearch
+  useEffect(() => {
+    setBoardSearch(searchQuery || '');
+  }, [searchQuery]);
 
   useEffect(() => {
     dispatch(fetchTasks());
@@ -185,11 +202,156 @@ export default function Dashboard() {
   });
   const eveningTasks = todayTasks.filter(t => new Date(t.eta).getHours() >= 17);
 
-  // Search Filter local check
-  const filteredTasks = tasks.filter(task => 
-    task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (task.employeeId?.name && task.employeeId.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  // 1. Group tasks by employee with advanced filtering
+  const groupedTasksByEmployee = React.useMemo(() => {
+    const groups = {};
+    
+    // Apply filters
+    const result = tasks.filter(task => {
+      // Search Query (Title or Employee Name)
+      const matchesSearch = boardSearch 
+        ? (task.title.toLowerCase().includes(boardSearch.toLowerCase()) || 
+           (task.employeeId?.name && task.employeeId.name.toLowerCase().includes(boardSearch.toLowerCase())))
+        : true;
+      
+      // Employee Filter
+      const matchesEmployee = filterEmployee === 'All' 
+        ? true 
+        : (task.employeeId?._id === filterEmployee);
+        
+      // Department Filter
+      const matchesDepartment = filterDepartment === 'All'
+        ? true
+        : (task.employeeId?.department === filterDepartment);
+        
+      // Priority Filter
+      const matchesPriority = filterPriority === 'All'
+        ? true
+        : (task.priority === filterPriority);
+        
+      // Status Filter
+      const matchesStatus = filterStatus === 'All'
+        ? true
+        : (task.status === filterStatus);
+        
+      // Due Date Filter
+      let matchesDueDate = true;
+      if (filterDueDate !== 'All') {
+        const eta = new Date(task.eta);
+        const todayStart = new Date();
+        todayStart.setHours(0,0,0,0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23,59,59,999);
+        
+        const tomorrowStart = new Date(todayStart.getTime() + 24*60*60*1000);
+        const tomorrowEnd = new Date(todayEnd.getTime() + 24*60*60*1000);
+        
+        const weekEnd = new Date(todayEnd.getTime() + 7*24*60*60*1000);
+        
+        if (filterDueDate === 'Overdue') {
+          matchesDueDate = eta < new Date() && task.status !== 'Completed';
+        } else if (filterDueDate === 'Today') {
+          matchesDueDate = eta >= todayStart && eta <= todayEnd;
+        } else if (filterDueDate === 'Tomorrow') {
+          matchesDueDate = eta >= tomorrowStart && eta <= tomorrowEnd;
+        } else if (filterDueDate === 'This Week') {
+          matchesDueDate = eta >= todayStart && eta <= weekEnd;
+        }
+      }
+      
+      return matchesSearch && matchesEmployee && matchesDepartment && matchesPriority && matchesStatus && matchesDueDate;
+    });
+    
+    // Group tasks
+    result.forEach(task => {
+      const empId = task.employeeId?._id || 'unassigned';
+      if (!groups[empId]) {
+        groups[empId] = {
+          employee: task.employeeId || { _id: 'unassigned', name: 'Unassigned', department: 'N/A' },
+          tasks: []
+        };
+      }
+      groups[empId].tasks.push(task);
+    });
+    
+    return Object.values(groups).sort((a, b) => a.employee.name.localeCompare(b.employee.name));
+  }, [tasks, boardSearch, filterEmployee, filterDepartment, filterPriority, filterStatus, filterDueDate]);
+
+  // 2. Summary stats for active, priority, due, overdue, and completed today
+  const boardStats = React.useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23,59,59,999);
+
+    let active = 0;
+    let highPriority = 0;
+    let dueToday = 0;
+    let overdue = 0;
+    let completedToday = 0;
+
+    tasks.forEach(task => {
+      const isCompleted = task.status === 'Completed';
+      const eta = new Date(task.eta);
+
+      if (!isCompleted) {
+        active++;
+        if (task.priority === 'High') {
+          highPriority++;
+        }
+        if (eta >= todayStart && eta <= todayEnd) {
+          dueToday++;
+        }
+        if (task.status === 'Overdue' || (eta < now && task.status !== 'Completed' && task.status !== 'On Hold')) {
+          overdue++;
+        }
+      } else {
+        // Check if completed today
+        const lastHistory = task.history && task.history[task.history.length - 1];
+        const dateToCheck = lastHistory ? new Date(lastHistory.updatedAt) : new Date(task.updatedAt || task.createdAt);
+        if (dateToCheck >= todayStart && dateToCheck <= todayEnd) {
+          completedToday++;
+        }
+      }
+    });
+
+    return { active, highPriority, dueToday, overdue, completedToday };
+  }, [tasks]);
+
+  // Auto-expand first employee group if nothing is expanded
+  useEffect(() => {
+    if (groupedTasksByEmployee.length > 0) {
+      const exists = groupedTasksByEmployee.some(g => (g.employee._id || 'unassigned') === expandedEmployeeId);
+      if (!exists) {
+        setExpandedEmployeeId(groupedTasksByEmployee[0].employee._id || 'unassigned');
+      }
+    } else {
+      setExpandedEmployeeId(null);
+    }
+  }, [groupedTasksByEmployee]);
+
+  // Derived metadata (Estimated Time, Dynamic Tags)
+  const getTaskMetadata = React.useCallback((task) => {
+    const estHours = task.priority === 'High' ? '8h' : task.priority === 'Medium' ? '4h' : '2h';
+    const tags = [];
+    const titleLower = task.title.toLowerCase();
+    
+    if (titleLower.includes('code') || titleLower.includes('bug') || titleLower.includes('review') || titleLower.includes('fix') || titleLower.includes('api')) {
+      tags.push('Engineering');
+    } else if (titleLower.includes('design') || titleLower.includes('ui') || titleLower.includes('ux') || titleLower.includes('figma')) {
+      tags.push('Design');
+    } else if (titleLower.includes('client') || titleLower.includes('call') || titleLower.includes('meeting') || titleLower.includes('demo')) {
+      tags.push('Client');
+    } else if (titleLower.includes('report') || titleLower.includes('marketing') || titleLower.includes('sale') || titleLower.includes('seo')) {
+      tags.push('Marketing');
+    } else {
+      tags.push('Operations');
+    }
+    
+    tags.push(task.priority);
+    return { estHours, tags };
+  }, []);
 
   // Stagger Animations variants
   const containerVariants = {
@@ -400,162 +562,435 @@ export default function Dashboard() {
       </div>
 
       {/* Main Employee Task Board */}
-      <div className="space-y-4 text-left">
-        <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-800">Active Task Board</h3>
+      <div className="clay-card p-6 text-left bg-white">
+        {/* Header and Stats Grid */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-850 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-purple-650" />
+              Active Task Board
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-1 font-bold">Organize, track, and monitor active employee deadlines</p>
+          </div>
+          
+          {/* Top Board Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 shrink-0 w-full xl:w-auto">
+            {/* Stat: Active */}
+            <div className="p-3 bg-slate-50/50 border border-[#D1DFDA] rounded-xl flex items-center gap-3 min-w-0 w-full">
+              <div className="p-2 bg-[#E1F2FF] text-blue-600 border border-blue-200/50 rounded-lg shrink-0">
+                <Activity className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block truncate">Active</span>
+                <span className="text-base font-extrabold text-slate-800 block mt-0.5 truncate">{boardStats.active}</span>
+              </div>
+            </div>
 
-        <motion.div 
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
-        >
-          {filteredTasks.map((task) => {
-            const employeeName = task.employeeId?.name || 'N/A';
-            const initials = getInitials(employeeName);
-            
-            return (
-              <motion.div
-                key={task._id}
-                layoutId={task._id}
-                variants={itemVariants}
-                whileHover={{ y: -3 }}
-                className={`clay-card p-5 bg-white relative flex flex-col justify-between ${
-                  task.status === 'Overdue' ? 'border-red-300 bg-red-50/10' :
-                  task.status === 'On Hold' ? 'border-purple-300 bg-purple-50/10' : ''
-                }`}
+            {/* Stat: High Priority */}
+            <div className="p-3 bg-slate-50/50 border border-[#D1DFDA] rounded-xl flex items-center gap-3 min-w-0 w-full">
+              <div className="p-2 bg-amber-50 text-amber-600 border border-amber-200/50 rounded-lg shrink-0">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block truncate">High Pri</span>
+                <span className="text-base font-extrabold text-amber-650 block mt-0.5 truncate">{boardStats.highPriority}</span>
+              </div>
+            </div>
+
+            {/* Stat: Due Today */}
+            <div className="p-3 bg-slate-50/50 border border-[#D1DFDA] rounded-xl flex items-center gap-3 min-w-0 w-full">
+              <div className="p-2 bg-emerald-50 text-emerald-600 border border-emerald-200/50 rounded-lg shrink-0">
+                <Clock className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block truncate">Due Today</span>
+                <span className="text-base font-extrabold text-emerald-600 block mt-0.5 truncate">{boardStats.dueToday}</span>
+              </div>
+            </div>
+
+            {/* Stat: Overdue */}
+            <div className="p-3 bg-slate-50/50 border border-[#D1DFDA] rounded-xl flex items-center gap-3 min-w-0 w-full">
+              <div className="p-2 bg-red-50 text-red-650 border border-red-200/50 rounded-lg shrink-0">
+                <AlertTriangle className="h-4 w-4 animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block truncate">Overdue</span>
+                <span className="text-base font-extrabold text-red-600 block mt-0.5 truncate">{boardStats.overdue}</span>
+              </div>
+            </div>
+
+            {/* Stat: Completed Today */}
+            <div className="p-3 bg-slate-50/50 border border-[#D1DFDA] rounded-xl flex items-center gap-3 min-w-0 w-full">
+              <div className="p-2 bg-purple-50 text-purple-750 border border-purple-200/50 rounded-lg shrink-0">
+                <Check className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block truncate">Completed</span>
+                <span className="text-base font-extrabold text-purple-700 block mt-0.5 truncate">{boardStats.completedToday}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters Sticky Panel */}
+        <div className="bg-slate-50/50 border border-[#D1DFDA] p-4 rounded-2xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6 shadow-sm">
+          {/* Search Task */}
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search tasks..."
+              value={boardSearch}
+              onChange={(e) => setBoardSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-[#D1DFDA] rounded-xl text-xs text-slate-700 font-bold focus:outline-none focus:border-[#5EAD93] transition"
+            />
+          </div>
+
+          {/* Employee Filter */}
+          <div>
+            <select
+              value={filterEmployee}
+              onChange={(e) => setFilterEmployee(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-[#D1DFDA] rounded-xl text-xs text-slate-700 font-bold focus:outline-none focus:border-[#5EAD93] transition"
+            >
+              <option value="All">All Employees</option>
+              {employees.map(emp => (
+                <option key={emp._id} value={emp._id}>{emp.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Department Filter */}
+          <div>
+            <select
+              value={filterDepartment}
+              onChange={(e) => setFilterDepartment(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-[#D1DFDA] rounded-xl text-xs text-slate-700 font-bold focus:outline-none focus:border-[#5EAD93] transition"
+            >
+              <option value="All">All Departments</option>
+              {Array.from(new Set(employees.map(e => e.department).filter(Boolean))).map(dept => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Priority Filter */}
+          <div>
+            <select
+              value={filterPriority}
+              onChange={(e) => setFilterPriority(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-[#D1DFDA] rounded-xl text-xs text-slate-700 font-bold focus:outline-none focus:border-[#5EAD93] transition"
+            >
+              <option value="All">All Priorities</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-[#D1DFDA] rounded-xl text-xs text-slate-700 font-bold focus:outline-none focus:border-[#5EAD93] transition"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Not Started">Not Started</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+              <option value="Overdue">Overdue</option>
+              <option value="On Hold">On Hold</option>
+            </select>
+          </div>
+
+          {/* Due Date Filter */}
+          <div>
+            <select
+              value={filterDueDate}
+              onChange={(e) => setFilterDueDate(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-[#D1DFDA] rounded-xl text-xs text-slate-700 font-bold focus:outline-none focus:border-[#5EAD93] transition"
+            >
+              <option value="All">All Due Dates</option>
+              <option value="Overdue">Overdue</option>
+              <option value="Today">Due Today</option>
+              <option value="Tomorrow">Due Tomorrow</option>
+              <option value="This Week">Due This Week</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Grouped Accordion List Container */}
+        <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-200">
+          {groupedTasksByEmployee.length === 0 ? (
+            /* Premium Empty State */
+            <div className="py-20 text-center bg-slate-50/20 border border-[#D1DFDA] rounded-2xl shadow-sm">
+              <Calendar className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+              <p className="font-bold text-slate-700 text-sm">No tasks matched your filters</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto font-semibold">
+                Try widening your filters or search terms, or assign new tasks to employees.
+              </p>
+              <button 
+                onClick={() => {
+                  setBoardSearch('');
+                  setFilterEmployee('All');
+                  setFilterDepartment('All');
+                  setFilterPriority('All');
+                  setFilterStatus('All');
+                  setFilterDueDate('All');
+                }}
+                className="mt-4 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition active:scale-95 shadow-sm"
               >
-                {/* Top header block */}
-                <div>
-                  <div className="flex justify-between items-start mb-3">
-                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
-                      task.priority === 'High' ? 'bg-red-50 text-red-650 border-red-200' :
-                      task.priority === 'Medium' ? 'bg-amber-50 text-amber-650 border-amber-200' :
-                      'bg-emerald-50 text-emerald-650 border-emerald-200'
-                    }`}>
-                      {task.priority} Priority
-                    </span>
+                Clear All Filters
+              </button>
+            </div>
+          ) : (
+            groupedTasksByEmployee.map((group) => {
+              const empId = group.employee._id || 'unassigned';
+              const name = group.employee.name || 'Unassigned';
+              const initials = getInitials(name);
+              const activeCount = group.tasks.filter(t => t.status !== 'Completed').length;
+              const hasOverdue = group.tasks.some(t => t.status === 'Overdue');
+              const isExpanded = expandedEmployeeId === empId;
 
-                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
-                      task.status === 'Completed' ? 'bg-emerald-50 text-emerald-650 border-emerald-200' :
-                      task.status === 'Overdue' ? 'bg-red-50 text-red-650 border-red-200 animate-pulse' :
-                      task.status === 'In Progress' ? 'bg-blue-50 text-blue-650 border-blue-200' :
-                      task.status === 'On Hold' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                      'bg-slate-100 text-slate-500 border-slate-200'
-                    }`}>
-                      {task.status}
-                    </span>
-                  </div>
-
-                  <h4 className="font-extrabold text-slate-800 text-sm tracking-wide line-clamp-1">{task.title}</h4>
-                  <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed min-h-[2.5rem]">
-                    {task.description || 'No description provided.'}
-                  </p>
-                </div>
-
-                {/* Avatar and Time Block */}
-                <div className="border-t border-[#D1DFDA] pt-4 mt-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-7 w-7 rounded-full overflow-hidden border border-[#D1DFDA] bg-slate-50 shrink-0 flex items-center justify-center">
-                        {task.employeeId?.avatar ? (
-                          <img src={task.employeeId.avatar} alt={employeeName} className="h-full w-full object-cover" />
+              return (
+                <div 
+                  key={empId}
+                  className={`clay-card overflow-hidden transition-all duration-300 ${
+                    isExpanded ? 'ring-1 ring-purple-100/50' : 'hover:border-[#5EAD93]'
+                  }`}
+                >
+                  {/* Sticky Accordion Header */}
+                  <div 
+                    onClick={() => setExpandedEmployeeId(isExpanded ? null : empId)}
+                    className={`sticky top-0 z-10 px-4 md:px-6 py-3.5 flex items-center justify-between cursor-pointer transition select-none ${
+                      isExpanded 
+                        ? 'bg-[#E2ECE8]/30 dark:bg-[#1D2C28]/40 border-b border-[#D1DFDA]/45 dark:border-[#24332F]/40' 
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      {/* Avatar */}
+                      <div className={`h-9 w-9 rounded-full overflow-hidden border border-[#D1DFDA] bg-slate-50 flex items-center justify-center shrink-0 ${
+                        hasOverdue && !isExpanded ? 'ring-2 ring-red-400 ring-offset-2' : ''
+                      }`}>
+                        {group.employee.avatar ? (
+                          <img src={group.employee.avatar} alt={name} className="h-full w-full object-cover" />
                         ) : (
-                          <div className={`h-full w-full flex items-center justify-center font-bold text-[9px] ${getAvatarColor(employeeName)}`}>
+                          <div className={`h-full w-full flex items-center justify-center font-bold text-xs ${getAvatarColor(name)}`}>
                             {initials}
                           </div>
                         )}
                       </div>
-                      <span className="text-xs font-bold text-slate-700 truncate max-w-[100px]">{employeeName}</span>
+                      
+                      {/* Employee Name & Dept */}
+                      <div className="min-w-0">
+                        <span className="font-extrabold text-slate-800 text-sm block truncate">{name}</span>
+                        <span className="text-[10px] text-slate-400 font-extrabold tracking-wide block truncate uppercase mt-0.5">
+                          {group.employee.department || 'No Department'}
+                        </span>
+                      </div>
                     </div>
 
-                    <span className="text-[11px] font-bold text-[#5EAD93] flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" />
-                      {new Date(task.eta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                    <div className="flex items-center gap-4 shrink-0">
+                      {/* Alert indicators and counts */}
+                      <div className="flex items-center gap-2">
+                        {hasOverdue && (
+                          <span className="flex h-2 w-2 relative shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                          </span>
+                        )}
+                        <span className={`text-[10px] font-bold px-3 py-1 rounded-full ${
+                          activeCount > 0 
+                            ? 'bg-purple-50 text-purple-700 font-bold' 
+                            : 'bg-slate-100 text-slate-500 font-bold'
+                        }`}>
+                          {activeCount} Active {activeCount === 1 ? 'Task' : 'Tasks'}
+                        </span>
+                      </div>
+
+                      {/* Chevron Indicator */}
+                      <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform duration-300 ${
+                        isExpanded ? 'rotate-90 text-purple-600' : ''
+                      }`} />
+                    </div>
                   </div>
 
-                  {/* Actions footer block */}
-                  <div className="flex gap-2 text-xs pt-1.5 border-t border-[#D1DFDA]/60">
-                    {task.status === 'Completed' ? (
-                      <button
-                        onClick={() => dispatch(markTaskNotStarted(task._id))}
-                        className="w-full py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
+                  {/* Collapsible Expanded Task Cards Grid */}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                        className="overflow-hidden"
                       >
-                        Reopen Task
-                      </button>
-                    ) : task.status === 'On Hold' ? (
-                      <>
-                        <button
-                          onClick={() => dispatch(resumeTask({ id: task._id }))}
-                          className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
-                        >
-                          <Play className="h-3.5 w-3.5" />
-                          Resume
-                        </button>
-                        <button
-                          onClick={() => {
-                            setExtendTaskId(task._id);
-                            const tzoffset = (new Date(task.eta)).getTimezoneOffset() * 60000;
-                            const formatted = (new Date(new Date(task.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
-                            setExtendEta(formatted);
-                            setShowExtendModal(true);
-                          }}
-                          className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
-                        >
-                          Extend
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => dispatch(completeTask(task._id))}
-                          className="flex-1 py-1.5 bg-[#22C55E] hover:bg-[#16A34A] text-white font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                          Complete
-                        </button>
-                        <button
-                          onClick={() => {
-                            setHoldTaskId(task._id);
-                            setHoldReason('');
-                            setShowHoldModal(true);
-                          }}
-                          className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-xl transition border border-purple-200 active:scale-95 flex items-center justify-center gap-1.5 shadow-sm shadow-purple-500/5"
-                          title="Put Task On Hold"
-                        >
-                          <Pause className="h-3.5 w-3.5" />
-                          Hold
-                        </button>
-                        <button
-                          onClick={() => {
-                            setExtendTaskId(task._id);
-                            const tzoffset = (new Date(task.eta)).getTimezoneOffset() * 60000;
-                            const formatted = (new Date(new Date(task.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
-                            setExtendEta(formatted);
-                            setShowExtendModal(true);
-                          }}
-                          className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
-                        >
-                          Extend
-                        </button>
-                      </>
+                        <div className="p-4 md:p-6 bg-slate-50/10 border-t border-[#D1DFDA]/40">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                            {group.tasks.map((task) => {
+                              const { estHours, tags } = getTaskMetadata(task);
+                              
+                              return (
+                                <motion.div
+                                  key={task._id}
+                                  layoutId={task._id}
+                                  whileHover={{ y: -3 }}
+                                  className={`clay-card p-5 relative flex flex-col justify-between transition-all duration-300 border ${
+                                    task.status === 'Overdue' ? 'border-red-300 dark:border-red-500/50 bg-red-50/10 dark:bg-red-500/5' :
+                                    task.status === 'On Hold' ? 'border-purple-300 dark:border-purple-500/50 bg-purple-50/10 dark:bg-purple-500/5' : 'border-[#D1DFDA]/70 hover:border-[#5EAD93]'
+                                  }`}
+                                >
+                                  {/* Top header block */}
+                                  <div className="pl-0">
+                                    <div className="flex justify-between items-start mb-3 gap-2">
+                                      {/* Tags list */}
+                                      <div className="flex flex-wrap gap-1">
+                                        {tags.slice(0, 2).map((t, idx) => (
+                                          <span 
+                                            key={idx} 
+                                            className={`text-[8px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
+                                              t === 'High' ? 'bg-red-50 text-red-650 border border-red-200' :
+                                              t === 'Medium' ? 'bg-amber-50 text-amber-655 border border-amber-200' :
+                                              t === 'Low' ? 'bg-emerald-50 text-emerald-655 border border-emerald-200' :
+                                              'bg-slate-100 text-slate-550 border border-slate-200/50'
+                                            }`}
+                                          >
+                                            {t}
+                                          </span>
+                                        ))}
+                                      </div>
+
+                                      {/* Status Badge */}
+                                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border shrink-0 ${
+                                        task.status === 'Completed' ? 'bg-emerald-50 text-emerald-650 border-emerald-250' :
+                                        task.status === 'Overdue' ? 'bg-red-50 text-red-655 border-red-205 animate-pulse' :
+                                        task.status === 'In Progress' ? 'bg-blue-50 text-blue-650 border-blue-200' :
+                                        task.status === 'On Hold' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                        'bg-slate-100 text-slate-550 border-slate-200'
+                                      }`}>
+                                        {task.status}
+                                      </span>
+                                    </div>
+
+                                    <h4 className="font-extrabold text-slate-800 text-sm tracking-wide line-clamp-1 mt-1">{task.title}</h4>
+                                    <p className="text-xs text-slate-500 mt-1.5 line-clamp-2 leading-relaxed min-h-[2.5rem]">
+                                      {task.description || 'No description provided.'}
+                                    </p>
+                                  </div>
+
+                                  {/* Time Block & Actions */}
+                                  <div className="border-t border-[#D1DFDA]/40 pt-4 mt-4 space-y-3.5 pl-0">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      {/* Due Date & Est Duration */}
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-slate-400 font-bold flex items-center gap-1">
+                                          <Clock className="h-3.5 w-3.5" />
+                                          {new Date(task.eta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <span className="text-slate-400 font-bold block bg-slate-50 border border-[#D1DFDA]/35 px-2 py-0.5 rounded-lg">
+                                          {estHours}
+                                        </span>
+                                      </div>
+
+                                      {/* Date Label */}
+                                      <span className="text-slate-550 font-extrabold tracking-wide uppercase text-[9px] bg-slate-50 px-2 py-0.5 rounded-lg border border-[#D1DFDA]/50">
+                                        {new Date(task.eta).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                      </span>
+                                    </div>
+
+                                    {/* Actions footer block */}
+                                    <div className="flex gap-2 text-xs pt-1 border-t border-[#D1DFDA]/30">
+                                      {task.status === 'Completed' ? (
+                                        <button
+                                          onClick={() => dispatch(markTaskNotStarted(task._id))}
+                                          className="w-full py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-655 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
+                                        >
+                                          Reopen Task
+                                        </button>
+                                      ) : task.status === 'On Hold' ? (
+                                        <>
+                                          <button
+                                            onClick={() => dispatch(resumeTask({ id: task._id }))}
+                                            className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
+                                          >
+                                            <Play className="h-3.5 w-3.5" />
+                                            Resume
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setExtendTaskId(task._id);
+                                              const tzoffset = (new Date(task.eta)).getTimezoneOffset() * 60000;
+                                              const formatted = (new Date(new Date(task.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
+                                              setExtendEta(formatted);
+                                              setShowExtendModal(true);
+                                            }}
+                                            className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-655 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
+                                          >
+                                            Extend
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            onClick={() => dispatch(completeTask(task._id))}
+                                            className="flex-1 py-1.5 bg-[#22C55E] hover:bg-[#16A34A] text-white font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-95 clay-btn"
+                                          >
+                                            <Check className="h-3.5 w-3.5" />
+                                            Complete
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setHoldTaskId(task._id);
+                                              setHoldReason('');
+                                              setShowHoldModal(true);
+                                            }}
+                                            className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-xl transition border border-purple-200 active:scale-95 flex items-center justify-center gap-1.5 shadow-sm shadow-purple-500/5"
+                                            title="Put Task On Hold"
+                                          >
+                                            <Pause className="h-3.5 w-3.5" />
+                                            Hold
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setExtendTaskId(task._id);
+                                              const tzoffset = (new Date(task.eta)).getTimezoneOffset() * 60000;
+                                              const formatted = (new Date(new Date(task.eta).getTime() - tzoffset)).toISOString().slice(0, -8);
+                                              setExtendEta(formatted);
+                                              setShowExtendModal(true);
+                                            }}
+                                            className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-655 font-semibold rounded-xl transition border border-[#D1DFDA] active:scale-95"
+                                          >
+                                            Extend
+                                          </button>
+                                        </>
+                                      )}
+                                      
+                                      <button
+                                        onClick={() => {
+                                          setDeleteTaskId(task._id);
+                                          setShowDeleteConfirm(true);
+                                        }}
+                                        className="p-2 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-500 transition"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
-                    
-                    <button
-                      onClick={() => {
-                        setDeleteTaskId(task._id);
-                        setShowDeleteConfirm(true);
-                      }}
-                      className="p-2 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-500 transition"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  </AnimatePresence>
                 </div>
-              </motion.div>
-            );
-          })}
-        </motion.div>
+              );
+            })
+          )}
+        </div>
       </div>
 
 
@@ -901,36 +1336,80 @@ function DashboardSkeleton() {
       </div>
 
       {/* Active Task Board Skeleton */}
-      <div className="space-y-4">
-        <div className="h-4 bg-slate-850 rounded w-48" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="space-y-6">
+        {/* Stats Grid and Title Placeholder */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+          <div className="space-y-2.5 w-1/4">
+            <div className="h-4 bg-slate-200 rounded w-2/3" />
+            <div className="h-3 bg-slate-200 rounded w-3/4" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 w-full xl:w-auto shrink-0">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="p-3 bg-white border border-slate-100 rounded-2xl flex items-center gap-3 min-w-[120px] h-[58px]">
+                <div className="h-8 w-8 bg-slate-200 rounded-xl" />
+                <div className="space-y-1.5 w-1/2">
+                  <div className="h-2 bg-slate-200 rounded w-3/4" />
+                  <div className="h-3 bg-slate-200 rounded w-1/2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Filter Bar placeholder */}
+        <div className="bg-slate-50 border border-slate-200/50 p-4 rounded-3xl grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3 h-[66px]">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/80 glass-card flex flex-col justify-between h-[218px]">
-              <div>
-                <div className="flex justify-between items-start mb-3">
-                  <div className="h-4 bg-slate-850 rounded-full w-20" />
-                  <div className="h-4 bg-slate-850 rounded-full w-16" />
-                </div>
-                <div className="h-4.5 bg-slate-850 rounded w-3/4 mb-2" />
-                <div className="space-y-1.5">
-                  <div className="h-3 bg-slate-850 rounded w-full" />
-                  <div className="h-3 bg-slate-850 rounded w-5/6" />
+            <div key={i} className="h-8 bg-white border border-slate-200 rounded-xl" />
+          ))}
+        </div>
+
+        {/* Employee Group rows */}
+        <div className="space-y-4">
+          {/* Expanded Employee Accordion */}
+          <div className="border border-slate-200 bg-white rounded-3xl shadow-sm overflow-hidden">
+            <div className="px-6 py-4 flex items-center justify-between bg-slate-50 border-b border-slate-100 h-[68px]">
+              <div className="flex items-center gap-3.5 w-1/3">
+                <div className="h-9 w-9 rounded-full bg-slate-200 shrink-0" />
+                <div className="space-y-2 w-full">
+                  <div className="h-3.5 bg-slate-200 rounded w-2/3" />
+                  <div className="h-2 bg-slate-200 rounded w-1/3" />
                 </div>
               </div>
-              <div className="border-t border-slate-800/60 pt-4 mt-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-7 w-7 rounded-full bg-slate-850" />
-                    <div className="h-3 bg-slate-850 rounded w-20" />
+              <div className="h-6 bg-slate-200 rounded-full w-20" />
+            </div>
+            <div className="p-6 bg-slate-50/20">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="p-5 rounded-2xl bg-white border border-slate-200 flex flex-col justify-between h-[180px]">
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <div className="h-3 bg-slate-200 rounded w-16" />
+                        <div className="h-4 bg-slate-200 rounded-full w-12" />
+                      </div>
+                      <div className="h-4 bg-slate-200 rounded w-3/4" />
+                      <div className="h-3 bg-slate-200 rounded w-full" />
+                    </div>
+                    <div className="border-t border-slate-100 pt-4 flex gap-2">
+                      <div className="flex-1 h-8 bg-slate-200 rounded-xl" />
+                      <div className="h-8 bg-slate-200 rounded-xl w-12" />
+                    </div>
                   </div>
-                  <div className="h-3 bg-slate-850 rounded w-12" />
-                </div>
-                <div className="flex gap-2 pt-1 border-t border-slate-850">
-                  <div className="flex-1 h-8 bg-slate-850 rounded-xl" />
-                  <div className="h-8 bg-slate-850 rounded-xl w-16" />
-                  <div className="h-8 bg-slate-850 rounded-xl w-8" />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Collapsed Employee Accordions */}
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="border border-slate-200 bg-white rounded-3xl p-4 flex items-center justify-between h-[68px]">
+              <div className="flex items-center gap-3.5 w-1/4">
+                <div className="h-9 w-9 rounded-full bg-slate-200 shrink-0" />
+                <div className="space-y-2 w-full">
+                  <div className="h-3 bg-slate-200 rounded w-2/3" />
+                  <div className="h-2 bg-slate-200 rounded w-1/3" />
                 </div>
               </div>
+              <div className="h-6 bg-slate-200 rounded-full w-16" />
             </div>
           ))}
         </div>
